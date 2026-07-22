@@ -1,0 +1,6 @@
+@NutritionTracker.Api_HostAddress = http://localhost:5198
+
+GET {{NutritionTracker.Api_HostAddress}}/health
+Accept: application/json
+
+###
