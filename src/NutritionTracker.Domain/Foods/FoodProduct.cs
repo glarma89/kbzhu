@@ -5,6 +5,14 @@ namespace NutritionTracker.Domain.Foods;
 
 public sealed class FoodProduct
 {
+    private FoodProduct()
+    {
+        Name = null!;
+        NormalizedName = null!;
+        NutritionPer100g = null!;
+        Source = null!;
+    }
+
     public FoodProduct(
         Guid id,
         Guid? userId,

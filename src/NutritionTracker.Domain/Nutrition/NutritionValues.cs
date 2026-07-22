@@ -4,6 +4,10 @@ namespace NutritionTracker.Domain.Nutrition;
 
 public sealed record NutritionValues
 {
+    private NutritionValues()
+    {
+    }
+
     public NutritionValues(
         decimal calories,
         decimal proteinGrams,

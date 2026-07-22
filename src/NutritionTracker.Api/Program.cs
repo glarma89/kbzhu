@@ -1,4 +1,10 @@
+using NutritionTracker.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
+
+var nutritionDatabaseConnectionString = builder.Configuration
+    .GetConnectionString("NutritionDatabase")
+    ?? throw new InvalidOperationException("Connection string 'NutritionDatabase' is not configured.");
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails(options =>
@@ -11,6 +17,7 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddInfrastructure(nutritionDatabaseConnectionString);
 
 var app = builder.Build();
 

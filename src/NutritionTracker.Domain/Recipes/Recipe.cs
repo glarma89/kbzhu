@@ -6,6 +6,11 @@ public sealed class Recipe
 {
     private readonly List<RecipeIngredient> _ingredients = [];
 
+    private Recipe()
+    {
+        Name = null!;
+    }
+
     public Recipe(
         Guid id,
         Guid userId,

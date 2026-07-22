@@ -4,6 +4,10 @@ namespace NutritionTracker.Domain.Meals;
 
 public sealed class Meal
 {
+    private Meal()
+    {
+    }
+
     public Meal(
         Guid id,
         Guid userId,

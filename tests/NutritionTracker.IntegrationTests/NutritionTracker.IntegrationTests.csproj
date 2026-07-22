@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NutritionTracker.Api\NutritionTracker.Api.csproj" />
+    <ProjectReference Include="..\..\src\NutritionTracker.Infrastructure\NutritionTracker.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\NutritionTracker.Domain\NutritionTracker.Domain.csproj" />
   </ItemGroup>
 
 </Project>

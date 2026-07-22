@@ -4,6 +4,12 @@ namespace NutritionTracker.Domain.Commands;
 
 public sealed class ProcessedCommand
 {
+    private ProcessedCommand()
+    {
+        IdempotencyKey = null!;
+        CommandType = null!;
+    }
+
     public ProcessedCommand(
         Guid id,
         Guid userId,

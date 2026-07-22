@@ -4,6 +4,12 @@ namespace NutritionTracker.Domain.Users;
 
 public sealed class UserProfile
 {
+    private UserProfile()
+    {
+        DisplayName = null!;
+        TimeZone = null!;
+    }
+
     public UserProfile(Guid id, string displayName, string timeZone, DateTimeOffset createdAtUtc)
     {
         Id = DomainGuard.NotEmpty(id, nameof(id));

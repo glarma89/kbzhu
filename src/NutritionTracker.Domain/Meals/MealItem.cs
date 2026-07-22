@@ -7,6 +7,11 @@ namespace NutritionTracker.Domain.Meals;
 
 public sealed class MealItem
 {
+    private MealItem()
+    {
+        NutritionSnapshot = null!;
+    }
+
     public MealItem(
         Guid id,
         Guid mealId,

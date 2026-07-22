@@ -4,6 +4,11 @@ namespace NutritionTracker.Domain.Nutrition;
 
 public sealed class NutritionTarget
 {
+    private NutritionTarget()
+    {
+        NutritionValues = null!;
+    }
+
     public NutritionTarget(
         Guid id,
         Guid userId,

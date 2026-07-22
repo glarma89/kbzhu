@@ -4,6 +4,10 @@ namespace NutritionTracker.Domain.Recipes;
 
 public sealed class RecipeIngredient
 {
+    private RecipeIngredient()
+    {
+    }
+
     public RecipeIngredient(Guid id, Guid recipeId, Guid foodProductId, decimal weightGrams)
     {
         Id = DomainGuard.NotEmpty(id, nameof(id));

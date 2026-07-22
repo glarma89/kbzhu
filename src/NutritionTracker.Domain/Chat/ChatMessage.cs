@@ -4,6 +4,11 @@ namespace NutritionTracker.Domain.Chat;
 
 public sealed class ChatMessage
 {
+    private ChatMessage()
+    {
+        Content = null!;
+    }
+
     public ChatMessage(
         Guid id,
         Guid userId,
