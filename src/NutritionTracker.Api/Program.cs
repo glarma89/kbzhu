@@ -1,3 +1,4 @@
+using NutritionTracker.Api.Errors;
 using NutritionTracker.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,7 @@ var nutritionDatabaseConnectionString = builder.Configuration
     ?? throw new InvalidOperationException("Connection string 'NutritionDatabase' is not configured.");
 
 builder.Services.AddControllers();
+builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>

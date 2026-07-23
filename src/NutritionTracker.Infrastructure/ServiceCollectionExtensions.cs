@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NutritionTracker.Application.Foods;
+using NutritionTracker.Infrastructure.Foods;
 using NutritionTracker.Infrastructure.Persistence;
 
 namespace NutritionTracker.Infrastructure;
@@ -14,6 +17,9 @@ public static class ServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         services.AddDbContext<NutritionDbContext>(options => options.UseSqlite(connectionString));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IFoodProductRepository, FoodProductRepository>();
+        services.AddScoped<IFoodProductService, FoodProductService>();
         return services;
     }
 }

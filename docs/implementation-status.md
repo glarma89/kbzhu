@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The checked-in repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, an initial migration, and automated tests. React/TypeScript frontend work and LLM integration are planned but have not been implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, an initial migration, food-product Application use cases and REST endpoints, and automated tests. React/TypeScript frontend work and LLM integration are planned but have not been implemented.
 
 `README.md` does not currently exist.
 
@@ -41,6 +41,14 @@ The checked-in repository currently contains the .NET backend foundation, domain
    - Added root `AGENTS.md` with architecture, verification, Git, security, and definition-of-done rules.
    - Added this repository-state document as the required starting point for future work.
 
+6. **Food-product Application layer and REST API** - current uncommitted stage
+   - Added typed create, update, get, search, and candidate-finding use cases.
+   - Added an Application-owned repository abstraction with an EF Core implementation.
+   - Added normalized Unicode/whitespace-insensitive name search without automatic deduplication or merging.
+   - Added user-scoped visibility and ownership rules, with personal products ranked before global products.
+   - Added thin food-product REST endpoints and centralized Application exception mapping.
+   - Added domain, Application unit, and migration-backed HTTP integration tests.
+
 No frontend, LLM integration, or application use cases have been completed.
 
 ## Current architecture
@@ -57,7 +65,7 @@ NutritionTracker.Api             -> NutritionTracker.Application + NutritionTrac
 Current responsibilities:
 
 - `NutritionTracker.Domain`: entities, value objects, invariants, enums, and deterministic nutrition calculations.
-- `NutritionTracker.Application`: reserved for use-case orchestration; currently contains only its assembly marker.
+- `NutritionTracker.Application`: food-product commands, queries, results, validation, orchestration service, repository abstraction, and Application exceptions.
 - `NutritionTracker.Infrastructure`: EF Core SQLite persistence, entity configurations, migrations, and DI registration.
 - `NutritionTracker.Api`: composition root, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
 - `NutritionTracker.Domain.Tests`: domain invariant and nutrition calculation tests.
@@ -83,6 +91,19 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Recipe usability validation requiring at least one ingredient
 - Meal-item source invariant: exactly one of product or recipe
 - Persistable meal-item nutrition snapshots and recipe version snapshots
+- Unicode FormKC food-name normalization with whitespace collapsing and invariant casing
+- Controlled food-product updates that preserve identity and ownership
+
+### Application use cases
+
+- `CreateFoodProduct`
+- `UpdateFoodProduct`
+- `GetFoodProductById`
+- `SearchFoodProducts`
+- `FindCandidatesByName`
+- Input validation for identifiers, text lengths, result limits, per-100-gram nutrition ranges, and referenced users
+- Separate records are preserved when normalized names match; no automatic merge or deduplication occurs
+- Searches include only global and caller-owned products and rank caller-owned products first
 
 ### Nutrition calculations
 
@@ -101,8 +122,14 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Swagger/OpenAPI in Development
 - `GET /health`
 - Infrastructure registration through dependency injection
+- `GET /api/foods`
+- `GET /api/foods/candidates`
+- `GET /api/foods/{id}`
+- `POST /api/foods`
+- `PUT /api/foods/{id}`
+- Application validation and not-found failures returned as `ProblemDetails`
 
-No nutrition, food, recipe, meal, goal, chat, or LLM API endpoints exist yet.
+No recipe, meal, nutrition-target, summary, chat, or LLM API endpoints exist yet.
 
 ## Database status
 
@@ -131,26 +158,30 @@ Delete behavior is explicit. Aggregate children (`RecipeIngredient`, `MealItem`)
 - The migration was previously applied successfully to an isolated temporary SQLite database.
 - The EF model was previously verified with `migrations has-pending-model-changes`; no pending changes were reported.
 - The latest calculator commit did not change persistence entities or mappings.
+- The food-product Application stage changes domain behavior and query infrastructure but does not change the EF model, so no migration was added.
 - The application does not automatically apply migrations on startup; database migration remains an explicit development/deployment operation.
 
 ## Verification status
 
-Latest recorded verification on 2026-07-23 for the implementation at commit `7d985c7`:
+Latest recorded verification on 2026-07-23 for the current food-product Application working tree:
 
+- `dotnet tool restore`: passed
 - `dotnet restore NutritionTracker.sln`: passed
 - `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
-- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 38/38 tests
-  - Domain tests: 30 passed
-  - Application tests: 1 passed
-  - Integration tests: 7 passed
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 52/52 tests
+  - Domain tests: 32 passed
+  - Application tests: 9 passed
+  - Integration tests: 11 passed
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- `dotnet-ef migrations has-pending-model-changes`: passed; no model changes were reported
 
-The complete test suite was run again after the documentation was created and passed 38/38 tests. No executable code, project file, configuration, or migration has changed since the successful build.
+The first sandboxed package restore attempt was blocked by NuGet network restrictions. It was repeated with approved network access and completed successfully before the final build and test run.
 
 ## Known issues and incomplete areas
 
 - `README.md` does not exist.
-- The Application layer has no implemented commands, queries, handlers, or orchestration services.
-- There are no food, recipe, meal, nutrition-target, summary, or chat API endpoints.
+- Application use cases currently cover food products only.
+- There are no recipe, meal, nutrition-target, summary, or chat API endpoints.
 - Authentication and user authorization are not implemented.
 - LLM client integration, tool schemas, tool dispatch, confirmation workflows, and ambiguity handling are not implemented.
 - React/TypeScript/Vite frontend is not present.
@@ -160,13 +191,13 @@ The complete test suite was run again after the documentation was created and pa
 
 ## Current task
 
-Finalize the repository guidance and implementation-status checkpoint as one documentation-only commit without changing application code.
+Implement the food-product Application layer, EF repository, REST endpoints, validation, search/candidate behavior, and tests without LLM integration.
 
-Status: completed.
+Status: implemented and verified in the working tree; no commit has been created.
 
 ## Next task
 
-No implementation task is assigned. Wait for user review and explicit direction; do not begin the next application stage automatically.
+Review this food-product stage and commit it only after explicit authorization. Do not begin another application stage automatically.
 
 ## Latest verified commit
 
