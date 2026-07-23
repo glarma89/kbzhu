@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NutritionTracker.Application.Chat;
 using NutritionTracker.Application.Foods;
 using NutritionTracker.Application.Meals;
 using NutritionTracker.Application.Recipes;
+using NutritionTracker.Infrastructure.Chat;
 using NutritionTracker.Infrastructure.Foods;
 using NutritionTracker.Infrastructure.Meals;
 using NutritionTracker.Infrastructure.Persistence;
@@ -22,6 +24,7 @@ public static class ServiceCollectionExtensions
 
         services.AddDbContext<NutritionDbContext>(options => options.UseSqlite(connectionString));
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IUserMessageProcessingRepository, UserMessageProcessingRepository>();
         services.AddScoped<IFoodProductRepository, FoodProductRepository>();
         services.AddScoped<IFoodProductService, FoodProductService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();

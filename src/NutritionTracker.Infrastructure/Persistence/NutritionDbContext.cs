@@ -21,6 +21,7 @@ public sealed class NutritionDbContext(DbContextOptions<NutritionDbContext> opti
     public DbSet<Meal> Meals => Set<Meal>();
     public DbSet<MealItem> MealItems => Set<MealItem>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<UserMessageProcessing> UserMessageProcessings => Set<UserMessageProcessing>();
     public DbSet<ProcessedCommand> ProcessedCommands => Set<ProcessedCommand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

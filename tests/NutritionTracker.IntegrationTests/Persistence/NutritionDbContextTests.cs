@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using NutritionTracker.Domain.Chat;
 using NutritionTracker.Domain.Commands;
 using NutritionTracker.Domain.Foods;
 using NutritionTracker.Domain.Meals;
@@ -25,8 +26,8 @@ public sealed class NutritionDbContextTests
         var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellation.Token);
 
         Assert.True(canConnect);
-        Assert.Equal(3, appliedMigrations.Count());
-        Assert.EndsWith("AddMealJournal", appliedMigrations.Last(), StringComparison.Ordinal);
+        Assert.Equal(4, appliedMigrations.Count());
+        Assert.EndsWith("AddUserMessageProcessing", appliedMigrations.Last(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -278,6 +279,69 @@ public sealed class NutritionDbContextTests
         context.AddRange(user, firstCommand);
         await context.SaveChangesAsync(cancellation.Token);
         context.ProcessedCommands.Add(duplicateCommand);
+
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => context.SaveChangesAsync(cancellation.Token));
+    }
+
+    [Fact]
+    public async Task UserMessageProcessingPersistsOriginalMessageAndCompletedToolResult()
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var database = await SqliteTestDatabase.CreateAsync(cancellation.Token);
+        var user = CreateUser();
+        var message = new ChatMessage(
+            Guid.NewGuid(), user.Id, ChatRole.User, "Добавь 180 г картошки", UtcNow);
+        var processing = new UserMessageProcessing(
+            message.Id, user.Id, "mobile-message-123", UtcNow);
+        processing.StartInterpreting(UtcNow);
+        processing.BeginExecution(
+            "{\"intent\":\"add_food\"}",
+            "add_food_to_diary",
+            "{\"food_product_id\":\"a7a7758a-068d-45c9-b9b2-e7b7683d4631\",\"weight_grams\":180}",
+            "message:123:add_food_to_diary",
+            UtcNow);
+        processing.CompleteExecution(
+            "{\"diary_item_id\":\"db91ddec-06c7-4c53-85f2-e01124bb680f\"}",
+            UtcNow);
+
+        await using (var writeContext = database.CreateContext())
+        {
+            writeContext.AddRange(user, message, processing);
+            await writeContext.SaveChangesAsync(cancellation.Token);
+        }
+
+        await using var readContext = database.CreateContext();
+        var storedMessage = await readContext.ChatMessages.AsNoTracking()
+            .SingleAsync(item => item.Id == message.Id, cancellation.Token);
+        var storedProcessing = await readContext.UserMessageProcessings.AsNoTracking()
+            .SingleAsync(item => item.MessageId == message.Id, cancellation.Token);
+
+        Assert.Equal("Добавь 180 г картошки", storedMessage.Content);
+        Assert.Equal(MessageProcessingState.Completed, storedProcessing.State);
+        Assert.Equal(processing.ExecutionResultJson, storedProcessing.ExecutionResultJson);
+        Assert.True(storedProcessing.HasUndeliveredResult);
+    }
+
+    [Fact]
+    public async Task DuplicateMessageDeliveryKeyForUserIsRejected()
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var database = await SqliteTestDatabase.CreateAsync(cancellation.Token);
+        var user = CreateUser();
+        var firstMessage = new ChatMessage(
+            Guid.NewGuid(), user.Id, ChatRole.User, "First", UtcNow);
+        var secondMessage = new ChatMessage(
+            Guid.NewGuid(), user.Id, ChatRole.User, "Second", UtcNow);
+        var firstProcessing = new UserMessageProcessing(
+            firstMessage.Id, user.Id, "same-delivery", UtcNow);
+        var duplicateProcessing = new UserMessageProcessing(
+            secondMessage.Id, user.Id, "same-delivery", UtcNow);
+
+        await using var context = database.CreateContext();
+        context.AddRange(user, firstMessage, firstProcessing);
+        await context.SaveChangesAsync(cancellation.Token);
+        context.AddRange(secondMessage, duplicateProcessing);
 
         await Assert.ThrowsAsync<DbUpdateException>(
             () => context.SaveChangesAsync(cancellation.Token));
