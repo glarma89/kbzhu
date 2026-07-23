@@ -15,12 +15,16 @@ public sealed class ProcessedCommand
         Guid userId,
         string idempotencyKey,
         string commandType,
+        Guid resultEntityId,
+        DateOnly resultDate,
         DateTimeOffset createdAtUtc)
     {
         Id = DomainGuard.NotEmpty(id, nameof(id));
         UserId = DomainGuard.NotEmpty(userId, nameof(userId));
         IdempotencyKey = DomainGuard.RequiredText(idempotencyKey, nameof(idempotencyKey));
         CommandType = DomainGuard.RequiredText(commandType, nameof(commandType));
+        ResultEntityId = DomainGuard.NotEmpty(resultEntityId, nameof(resultEntityId));
+        ResultDate = resultDate;
         CreatedAtUtc = DomainGuard.Utc(createdAtUtc, nameof(createdAtUtc));
     }
 
@@ -31,6 +35,10 @@ public sealed class ProcessedCommand
     public string IdempotencyKey { get; }
 
     public string CommandType { get; }
+
+    public Guid ResultEntityId { get; }
+
+    public DateOnly ResultDate { get; }
 
     public DateTimeOffset CreatedAtUtc { get; }
 }

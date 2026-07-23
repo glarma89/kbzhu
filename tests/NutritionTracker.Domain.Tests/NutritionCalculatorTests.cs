@@ -89,6 +89,26 @@ public sealed class NutritionCalculatorTests
     }
 
     [Fact]
+    public void PersistedRecipeVersionFractionUsesIngredientSnapshots()
+    {
+        var (recipe, _) = CreateRecipe(320m);
+
+        var result = NutritionCalculator.CalculateRecipeFraction(recipe.CurrentVersion, 0.5m);
+
+        Assert.Equal(new NutritionValues(115m, 5m, 0.875m, 22.25m), result);
+    }
+
+    [Fact]
+    public void SnapshotWeightRecalculationPreservesOriginalNutritionRatio()
+    {
+        var snapshot = new NutritionValues(80m, 2m, 0.1m, 17m);
+
+        var result = NutritionCalculator.RecalculateSnapshotWeight(snapshot, 100m, 150m);
+
+        Assert.Equal(new NutritionValues(120m, 3m, 0.15m, 25.5m), result);
+    }
+
+    [Fact]
     public void GramBasedRecipeCalculationsRequirePreparedWeight()
     {
         var (recipe, products) = CreateRecipe(null);

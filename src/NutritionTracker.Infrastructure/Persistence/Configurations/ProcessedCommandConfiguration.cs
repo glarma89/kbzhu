@@ -14,6 +14,8 @@ internal sealed class ProcessedCommandConfiguration : IEntityTypeConfiguration<P
         builder.HasIndex(command => new { command.UserId, command.IdempotencyKey }).IsUnique();
         builder.Property(command => command.IdempotencyKey).IsRequired();
         builder.Property(command => command.CommandType).IsRequired();
+        builder.Property(command => command.ResultEntityId).IsRequired();
+        builder.Property(command => command.ResultDate).IsRequired();
         builder.Property(command => command.CreatedAtUtc).IsRequired();
         builder.HasOne<UserProfile>().WithMany().HasForeignKey(command => command.UserId)
             .OnDelete(DeleteBehavior.Restrict);

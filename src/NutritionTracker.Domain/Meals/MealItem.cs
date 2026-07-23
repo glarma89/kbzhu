@@ -44,17 +44,17 @@ public sealed class MealItem
 
     public Guid Id { get; }
 
-    public Guid MealId { get; }
+    public Guid MealId { get; private set; }
 
     public Guid? FoodProductId { get; }
 
     public Guid? RecipeId { get; }
 
-    public decimal WeightGrams { get; }
+    public decimal WeightGrams { get; private set; }
 
     public int? RecipeVersion { get; }
 
-    public NutritionValues NutritionSnapshot { get; }
+    public NutritionValues NutritionSnapshot { get; private set; }
 
     public decimal CaloriesSnapshot => NutritionSnapshot.Calories;
 
@@ -65,4 +65,15 @@ public sealed class MealItem
     public decimal CarbohydratesSnapshot => NutritionSnapshot.CarbohydrateGrams;
 
     public Guid? SourceMessageId { get; }
+
+    public void UpdateWeight(decimal weightGrams, NutritionValues nutritionSnapshot)
+    {
+        WeightGrams = DomainGuard.Positive(weightGrams, nameof(weightGrams));
+        NutritionSnapshot = nutritionSnapshot ?? throw new ArgumentNullException(nameof(nutritionSnapshot));
+    }
+
+    public void MoveTo(Guid mealId)
+    {
+        MealId = DomainGuard.NotEmpty(mealId, nameof(mealId));
+    }
 }

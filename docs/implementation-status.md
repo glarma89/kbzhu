@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product and versioned-recipe Application use cases, REST endpoints, migrations, and automated tests. React/TypeScript frontend work and LLM integration are planned but have not been implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, REST endpoints, migrations, and automated tests. React/TypeScript frontend work and LLM integration are planned but have not been implemented.
 
 `README.md` does not currently exist.
 
@@ -14,7 +14,7 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Latest local implementation commit: `f815124`
+- Latest local implementation commit: `238221e`
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -49,12 +49,18 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added thin food-product REST endpoints and centralized Application exception mapping.
    - Added domain, Application unit, and migration-backed HTTP integration tests.
 
-7. **Versioned recipe management** - current uncommitted stage
+7. **Versioned recipe management** - commit `238221e` (`feat(recipes): add immutable recipe version history and API`)
    - Selected separate immutable `RecipeVersion` records rather than relying only on the mutable recipe row and MealItem snapshots.
    - Preserved the stable recipe identifier while recording every composition version, audit metadata, exact product weights, and product nutrition snapshots.
    - Kept `MealItem.RecipeVersion` and its nutrition snapshot and added a database FK to the exact persisted recipe version.
    - Added create, get, search, update, archive, total-nutrition, and portion-calculation use cases and REST endpoints.
    - Added a migration that backfills existing recipes and version ingredients before enforcing version foreign keys.
+
+8. **Meal journal Application layer and REST API** - current uncommitted stage
+   - Added idempotent food, recipe-portion, and recipe-fraction logging operations.
+   - Added meal-item weight updates, moves, and deletion with current daily summaries in every mutation response.
+   - Added user-time-zone daily boundaries, snapshot-based totals, effective daily targets, and negative remaining values for over-target days.
+   - Added migration-backed UTC-millisecond meal occurrence storage and processed-command result metadata for replay responses.
 
 No frontend or LLM integration has been completed.
 
@@ -72,7 +78,7 @@ NutritionTracker.Api             -> NutritionTracker.Application + NutritionTrac
 Current responsibilities:
 
 - `NutritionTracker.Domain`: entities, value objects, invariants, enums, and deterministic nutrition calculations.
-- `NutritionTracker.Application`: food-product and recipe commands, queries, results, validation, orchestration services, repository abstractions, and Application exceptions.
+- `NutritionTracker.Application`: food-product, recipe, and meal-journal commands, queries, results, validation, orchestration services, repository abstractions, and Application exceptions.
 - `NutritionTracker.Infrastructure`: EF Core SQLite persistence, entity configurations, migrations, and DI registration.
 - `NutritionTracker.Api`: composition root, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
 - `NutritionTracker.Domain.Tests`: domain invariant and nutrition calculation tests.
@@ -124,6 +130,17 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - `CalculateRecipePortion`
 - Recipe ownership and ingredient-product visibility validation
 - Historical version retrieval and deterministic recalculation from persisted snapshots
+- `AddFoodToMeal`
+- `AddRecipePortionToMeal`
+- `AddRecipeFractionToMeal`
+- `UpdateMealItemWeight`
+- `DeleteMealItem`
+- `MoveMealItem`
+- `GetDailySummary`
+- `GetMealsForDate`
+- `GetRemainingDailyTargets`
+- User-local date resolution through `UserProfile.TimeZone` without server-local time
+- Idempotent mutation replay through persisted processed-command results
 
 ### Nutrition calculations
 
@@ -154,9 +171,15 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - `POST /api/recipes/{id}/archive`
 - `GET /api/recipes/{id}/nutrition`
 - `GET /api/recipes/{id}/nutrition/portion`
+- `POST /api/meals/items/food`
+- `POST /api/meals/items/recipe`
+- `PUT /api/meals/items/{id}` for either weight update or move
+- `DELETE /api/meals/items/{id}`
+- `GET /api/meals`
+- `GET /api/daily-summary`
 - Application validation and not-found failures returned as `ProblemDetails`
 
-No meal, nutrition-target, summary, chat, or LLM API endpoints exist yet.
+No nutrition-target mutation, chat, or LLM API endpoints exist yet.
 
 ## Database status
 
@@ -184,29 +207,32 @@ Recipe versioning uses:
 - `RecipeVersionIngredients` with exact weights and per-100-gram nutrition snapshots.
 - A composite optional FK from `MealItem (RecipeId, RecipeVersion)` to the recorded version.
 - Current recipe ingredients remain on `RecipeIngredients` for simple current-state editing and calculation workflows.
+- `Meal.OccurredAt` is normalized to UTC and stored as Unix milliseconds so SQLite can perform indexed UTC range queries.
+- `ProcessedCommand` stores its result item and user-local result date so repeats return the original operation identity and current daily totals.
 
 ## Migrations status
 
 - Initial migration: `20260722182615_InitialCreate`
 - Recipe history migration: `20260723121438_AddRecipeVersionHistory`
+- Meal journal migration: `20260723133852_AddMealJournal`
 - Model snapshot: `NutritionDbContextModelSnapshot`
-- The migration was previously applied successfully to an isolated temporary SQLite database.
-- The EF model was previously verified with `migrations has-pending-model-changes`; no pending changes were reported.
+- All migrations apply successfully to isolated temporary SQLite databases.
+- The meal-journal migration preserves and converts legacy `OccurredAt` offset timestamps to UTC Unix milliseconds.
 - The latest calculator commit did not change persistence entities or mappings.
 - The recipe migration backfills legacy recipe/version data and product nutrition snapshots before adding the MealItem-to-version FK.
 - The application does not automatically apply migrations on startup; database migration remains an explicit development/deployment operation.
 
 ## Verification status
 
-Latest recorded verification on 2026-07-23 for the versioned recipe working tree:
+Latest recorded verification on 2026-07-23 for the meal-journal working tree:
 
 - `dotnet tool restore`: passed
 - `dotnet restore NutritionTracker.sln`: passed
 - `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
-- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 63/63 tests
-  - Domain tests: 34 passed
-  - Application tests: 14 passed
-  - Integration tests: 15 passed
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 72/72 tests
+  - Domain tests: 37 passed
+  - Application tests: 18 passed
+  - Integration tests: 17 passed
 - `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
 - `dotnet-ef migrations has-pending-model-changes`: passed; no model changes were reported
 
@@ -215,8 +241,8 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 ## Known issues and incomplete areas
 
 - `README.md` does not exist.
-- Application use cases currently cover food products and recipes.
-- There are no meal, nutrition-target, summary, or chat API endpoints.
+- Application use cases currently cover food products, recipes, and meal journaling with daily summaries.
+- There are no nutrition-target mutation or chat API endpoints.
 - Authentication and user authorization are not implemented.
 - LLM client integration, tool schemas, tool dispatch, confirmation workflows, and ambiguity handling are not implemented.
 - React/TypeScript/Vite frontend is not present.
@@ -226,18 +252,18 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-Implement versioned recipe management, historical composition/audit, calculations, persistence migration, REST endpoints, and tests without LLM integration.
+Implement the meal journal Application layer, REST endpoints, time-zone-aware daily summaries, snapshot totals, and idempotent mutations.
 
 Status: implemented and verified in the working tree; no commit has been created.
 
 ## Next task
 
-Review this recipe stage and commit it only after explicit authorization. Do not begin another application stage automatically.
+Review this meal-journal stage and commit it only after explicit authorization. Do not begin another application stage automatically.
 
 ## Latest verified commit
 
 ```text
-7d985c7 feat: add deterministic nutrition calculator
+238221e feat(recipes): add immutable recipe version history and API
 ```
 
-This is the latest application implementation commit whose build and complete test suite were verified. The subsequent documentation-only checkpoint does not change executable code.
+This is the latest committed implementation. The meal-journal working tree described above is also fully verified but remains uncommitted.

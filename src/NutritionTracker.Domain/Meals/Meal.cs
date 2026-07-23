@@ -18,7 +18,7 @@ public sealed class Meal
     {
         Id = DomainGuard.NotEmpty(id, nameof(id));
         UserId = DomainGuard.NotEmpty(userId, nameof(userId));
-        OccurredAt = occurredAt;
+        OccurredAt = DomainGuard.Utc(occurredAt, nameof(occurredAt));
 
         if (!Enum.IsDefined(mealType))
         {

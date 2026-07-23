@@ -12,7 +12,11 @@ internal sealed class MealConfiguration : IEntityTypeConfiguration<Meal>
         builder.ToTable("Meals");
         builder.HasKey(meal => meal.Id);
         builder.HasIndex(meal => new { meal.UserId, meal.OccurredAt });
-        builder.Property(meal => meal.OccurredAt).IsRequired();
+        builder.Property(meal => meal.OccurredAt)
+            .HasConversion(
+                value => value.ToUnixTimeMilliseconds(),
+                value => DateTimeOffset.FromUnixTimeMilliseconds(value))
+            .IsRequired();
         builder.Property(meal => meal.MealType).HasConversion<string>().IsRequired();
         builder.Property(meal => meal.Notes);
         builder.Property(meal => meal.CreatedAtUtc).IsRequired();

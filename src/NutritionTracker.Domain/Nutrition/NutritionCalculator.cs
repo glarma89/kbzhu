@@ -143,6 +143,35 @@ public static class NutritionCalculator
             total.CarbohydrateGrams * validatedFraction);
     }
 
+    public static NutritionValues CalculateRecipeFraction(RecipeVersion recipeVersion, decimal fraction)
+    {
+        ArgumentNullException.ThrowIfNull(recipeVersion);
+        var validatedFraction = DomainGuard.Positive(fraction, nameof(fraction));
+        var total = CalculateRecipe(recipeVersion);
+
+        return new NutritionValues(
+            total.Calories * validatedFraction,
+            total.ProteinGrams * validatedFraction,
+            total.FatGrams * validatedFraction,
+            total.CarbohydrateGrams * validatedFraction);
+    }
+
+    public static NutritionValues RecalculateSnapshotWeight(
+        NutritionValues snapshot,
+        decimal originalWeightGrams,
+        decimal newWeightGrams)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var originalWeight = DomainGuard.Positive(originalWeightGrams, nameof(originalWeightGrams));
+        var newWeight = DomainGuard.Positive(newWeightGrams, nameof(newWeightGrams));
+
+        return new NutritionValues(
+            snapshot.Calories * newWeight / originalWeight,
+            snapshot.ProteinGrams * newWeight / originalWeight,
+            snapshot.FatGrams * newWeight / originalWeight,
+            snapshot.CarbohydrateGrams * newWeight / originalWeight);
+    }
+
     public static NutritionValues RoundForBoundary(NutritionValues values)
     {
         ArgumentNullException.ThrowIfNull(values);

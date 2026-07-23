@@ -109,4 +109,26 @@ public sealed class MealItemTests
         Assert.Equal(6m, mealItem.FatSnapshot);
         Assert.Equal(40m, mealItem.CarbohydratesSnapshot);
     }
+
+    [Fact]
+    public void WeightAndMealCanBeChangedThroughControlledOperations()
+    {
+        var item = new MealItem(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            DomainTestData.CreateFoodProduct(),
+            null,
+            100m,
+            new NutritionValues(80m, 2m, 0.1m, 17m),
+            null);
+        var targetMealId = Guid.NewGuid();
+        var snapshot = new NutritionValues(120m, 3m, 0.15m, 25.5m);
+
+        item.UpdateWeight(150m, snapshot);
+        item.MoveTo(targetMealId);
+
+        Assert.Equal(150m, item.WeightGrams);
+        Assert.Equal(snapshot, item.NutritionSnapshot);
+        Assert.Equal(targetMealId, item.MealId);
+    }
 }

@@ -25,8 +25,8 @@ public sealed class NutritionDbContextTests
         var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellation.Token);
 
         Assert.True(canConnect);
-        Assert.Equal(2, appliedMigrations.Count());
-        Assert.EndsWith("AddRecipeVersionHistory", appliedMigrations.Last(), StringComparison.Ordinal);
+        Assert.Equal(3, appliedMigrations.Count());
+        Assert.EndsWith("AddMealJournal", appliedMigrations.Last(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -96,6 +96,8 @@ public sealed class NutritionDbContextTests
             .SingleAsync(item => item.RecipeId == recipeId && item.Version == 3, cancellation.Token);
         var storedMealItem = await readContext.MealItems.AsNoTracking()
             .SingleAsync(item => item.Id == mealItemId, cancellation.Token);
+        var storedMeal = await readContext.Meals.AsNoTracking()
+            .SingleAsync(item => item.Id == mealId, cancellation.Token);
 
         Assert.Equal("LEGACY RECIPE", recipe.NormalizedName);
         Assert.Equal("Migration", version.ChangeSource);
@@ -104,6 +106,7 @@ public sealed class NutritionDbContextTests
         Assert.Equal(new NutritionValues(80m, 2m, 0.1m, 17m), ingredient.NutritionPer100gSnapshot);
         Assert.Equal(3, storedMealItem.RecipeVersion);
         Assert.Equal(new NutritionValues(40m, 1m, 0.05m, 8.5m), storedMealItem.NutritionSnapshot);
+        Assert.Equal(UtcNow, storedMeal.OccurredAt);
     }
 
     [Fact]
@@ -267,9 +270,9 @@ public sealed class NutritionDbContextTests
         await using var database = await SqliteTestDatabase.CreateAsync(cancellation.Token);
         var user = CreateUser();
         var firstCommand = new ProcessedCommand(
-            Guid.NewGuid(), user.Id, "message-123", "LogFood", UtcNow);
+            Guid.NewGuid(), user.Id, "message-123", "LogFood", Guid.NewGuid(), DateOnly.FromDateTime(UtcNow.Date), UtcNow);
         var duplicateCommand = new ProcessedCommand(
-            Guid.NewGuid(), user.Id, "message-123", "LogFood", UtcNow.AddSeconds(1));
+            Guid.NewGuid(), user.Id, "message-123", "LogFood", Guid.NewGuid(), DateOnly.FromDateTime(UtcNow.Date), UtcNow.AddSeconds(1));
 
         await using var context = database.CreateContext();
         context.AddRange(user, firstCommand);

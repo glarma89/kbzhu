@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NutritionTracker.Application.Foods;
+using NutritionTracker.Application.Meals;
 using NutritionTracker.Application.Recipes;
 using NutritionTracker.Infrastructure.Foods;
+using NutritionTracker.Infrastructure.Meals;
 using NutritionTracker.Infrastructure.Persistence;
 using NutritionTracker.Infrastructure.Recipes;
 
@@ -24,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFoodProductService, FoodProductService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();
         services.AddScoped<IRecipeService, RecipeService>();
+        services.AddScoped<IMealRepository, MealRepository>();
+        services.AddScoped<IMealService, MealService>();
         return services;
     }
 }
