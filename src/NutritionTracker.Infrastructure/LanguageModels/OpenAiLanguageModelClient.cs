@@ -88,12 +88,18 @@ internal sealed class OpenAiLanguageModelClient(OpenAiLanguageModelOptions optio
     private string BuildRequestJson(LanguageModelRequest request)
     {
         var input = new JsonArray();
-        if (request.UserMessage is not null)
+        foreach (var message in request.Messages)
         {
             input.Add(new JsonObject
             {
-                ["role"] = "user",
-                ["content"] = request.UserMessage
+                ["role"] = message.Role switch
+                {
+                    NutritionTracker.Domain.Chat.ChatRole.User => "user",
+                    NutritionTracker.Domain.Chat.ChatRole.Assistant => "assistant",
+                    _ => throw new InvalidOperationException(
+                        $"The context message role '{message.Role}' is not supported.")
+                },
+                ["content"] = message.Content
             });
         }
 

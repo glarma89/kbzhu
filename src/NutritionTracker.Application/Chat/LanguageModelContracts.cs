@@ -11,12 +11,21 @@ public sealed record LanguageModelToolDefinition(
 
 public sealed record LanguageModelToolOutput(string CallId, string OutputJson);
 
+public sealed record LanguageModelInputMessage(
+    NutritionTracker.Domain.Chat.ChatRole Role,
+    string Content,
+    long Sequence = 0);
+
 public sealed record LanguageModelRequest(
     string Instructions,
-    string? UserMessage,
+    IReadOnlyList<LanguageModelInputMessage> Messages,
     string? PreviousResponseId,
     IReadOnlyList<LanguageModelToolOutput> ToolOutputs,
-    IReadOnlyList<LanguageModelToolDefinition> Tools);
+    IReadOnlyList<LanguageModelToolDefinition> Tools)
+{
+    public string? UserMessage => Messages.LastOrDefault(message =>
+        message.Role == NutritionTracker.Domain.Chat.ChatRole.User)?.Content;
+}
 
 public sealed record LanguageModelToolCall(string CallId, string Name, string ArgumentsJson);
 

@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, explicit chat confirmation/cancellation continuation, and a canonical Russian assistant system instruction. React/TypeScript frontend work and a concrete production identity provider are not implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, explicit chat confirmation/cancellation continuation, a canonical Russian assistant system instruction, and deterministic bounded per-message context construction. React/TypeScript frontend work and a concrete production identity provider are not implemented.
 
 `README.md` does not currently exist.
 
@@ -14,8 +14,8 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Current commit: `9722992` (`feat(chat): secure authenticated assistant workflows`)
-- Current implementation stage: trusted authenticated identity, explicit chat confirmation continuation, and the Russian assistant instruction; committed and verified
+- Current commit: the context-formation implementation commit containing this checkpoint
+- Current implementation stage: deterministic bounded per-message LLM context construction; committed and verified
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -106,6 +106,14 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Explicitly resists prompt injection, arbitrary SQL/database access, tool-policy bypass, secret disclosure, invented identifiers, and invented nutrition data.
    - Keeps user products, recipes, and diary content out of the system instruction; those records may enter model context only through registered tools and only as needed.
    - Added a documentation specification with ten synthetic positive/negative dialogue scenarios and a focused Application test protecting the instruction's critical rules.
+
+14. **Deterministic per-message context formation** - this implementation-stage commit
+   - Added an Application-owned, provider-independent `ContextBuilder` with a 32,000-character default budget, deterministic message ranking, and explicit required-versus-optional context handling.
+   - Always includes the canonical system instruction, current user message, current tool outputs, database-backed time zone, supported gram units, effective daily target, and the latest unfinished clarification or confirmation when present.
+   - Selects at most six prior user/assistant messages from a database-limited candidate window, combining the two most recent messages with lexically relevant messages and dropping optional history before required context.
+   - Supports an optional non-authoritative summary, while explicitly requiring current database/tool data to override summaries and conversation history for factual food, recipe, diary, and nutrition claims.
+   - Added a parameterized SQLite context source that reads at most 24 recent chat rows rather than loading full chat or nutrition history.
+   - Added focused deterministic selection/size unit tests and a migration-backed integration test for persisted history and current user settings.
 
 No frontend or concrete production identity-provider adapter has been completed. Automated tests never invoke OpenAI.
 
@@ -198,6 +206,12 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Trusted authenticated user identity from the validated `sub` claim; HTTP payloads cannot select another user
 - Explicit pending-confirmation continuation with canonical argument binding and terminal cancellation
 - Canonical Russian assistant system instruction applied to every provider request
+- Deterministic bounded context construction for every new user message
+- Database-backed time zone and effective daily target plus the application's supported gram units in model context
+- At most six selected prior user/assistant messages from a 24-row candidate window
+- Latest unfinished clarification or confirmation included without loading the complete chat history
+- Current tool results retained through the bounded Responses agent loop; food, recipe, meal, and daily-summary facts continue to come from allowlisted tools
+- Optional summaries are explicitly non-authoritative and lose to current database/tool data on conflict
 
 ### Future LLM tool contract
 
@@ -305,6 +319,19 @@ Recipe versioning uses:
 
 ## Verification status
 
+Implementation-stage verification on 2026-07-23 for deterministic per-message context formation:
+
+- `dotnet restore NutritionTracker.sln`: passed after approved NuGet network access; the sandboxed attempt was blocked by network policy
+- `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 117/117 tests
+  - Domain tests: 43 passed
+  - Application tests: 48 passed
+  - Integration tests: 26 passed
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- Focused tests cover deterministic relevance/recency selection, required-context preservation, size-limit rejection, persisted conversation reconstruction, and database-current settings
+- No persistence model changes or migrations were required
+- Automated tests use fake language-model clients; no real OpenAI request was made
+
 Implementation-stage verification on 2026-07-23 for the Russian AI-assistant system instruction:
 
 - `dotnet restore NutritionTracker.sln`: passed; all projects were up to date
@@ -375,6 +402,8 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 - `README.md` does not exist.
 - Application use cases cover food products, recipes, meal journaling, daily summaries, and chat agent-loop orchestration.
 - There is no nutrition-target mutation endpoint.
+- Measurement units are currently the application's fixed gram-based contract; configurable per-user unit preferences are not implemented.
+- The context contract supports non-authoritative summaries, but no summary generation or persistence workflow is implemented.
 - A concrete production identity provider is not configured; the API currently defines the claims contract and intentionally rejects protected requests through its unconfigured authentication scheme.
 - React/TypeScript/Vite frontend is not present.
 - There is no external or seeded food-product catalog.
@@ -383,16 +412,16 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-No implementation task is currently active. The latest authenticated-assistant workflow stage is committed and verified.
+No implementation task is currently active. The deterministic per-message context-formation stage is committed and verified.
 
 ## Next task
 
-At the next authorized stage, future work may add automated multi-turn prompt-behavior evaluations, integrate a concrete production identity provider, or add nutrition-target mutation workflows.
+At the next authorized stage, future work may add automated multi-turn prompt-behavior evaluations, persisted non-authoritative conversation summaries, configurable unit preferences, a concrete production identity provider, or nutrition-target mutation workflows.
 
 ## Latest verified commit
 
 ```text
-9722992 feat(chat): secure authenticated assistant workflows
+The implementation commit containing this checkpoint: `feat(chat): add bounded message context`
 ```
 
-This commit includes trusted identity propagation, explicit confirmation/cancellation continuation, the confirmation-hash migration, the Russian system instruction, documentation, and the 113-test verified suite.
+This commit includes deterministic bounded context construction, database-backed stable settings, unfinished workflow context, relevant recent-message selection, current tool-result continuation, documentation, and the 117-test verified suite.

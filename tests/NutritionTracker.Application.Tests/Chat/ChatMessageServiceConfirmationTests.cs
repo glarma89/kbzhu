@@ -92,6 +92,8 @@ public sealed class ChatMessageServiceConfirmationTests
                 null,
                 [new LanguageModelToolCall("call-1", "update_food", arguments)])),
             executor,
+            new StaticContextSource(),
+            new ContextBuilder(ContextBuilderSettings.Default),
             ChatAgentSettings.Default,
             new FixedTimeProvider(UtcNow));
         return new TestHarness(Guid.NewGuid(), service, repository, executor);
@@ -124,6 +126,17 @@ public sealed class ChatMessageServiceConfirmationTests
             LastRequest = request;
             return Task.FromResult(new MessageToolExecutionOutcome(true, "{}"));
         }
+    }
+
+    private sealed class StaticContextSource : IChatContextSource
+    {
+        public Task<ChatContextSnapshot> GetAsync(
+            ChatContextSourceRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(new ChatContextSnapshot(
+                new ContextUserSettings("UTC", "grams", null),
+                [],
+                null,
+                null));
     }
 
     private sealed class FakeRepository : IUserMessageProcessingRepository

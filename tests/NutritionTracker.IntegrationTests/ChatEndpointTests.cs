@@ -20,6 +20,66 @@ public sealed class ChatEndpointTests
     private static readonly DateTimeOffset UtcNow = new(2026, 7, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task BuildsLimitedContextFromPersistedConversationAndCurrentUserSettings()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "Asia/Jerusalem", UtcNow);
+        var target = new NutritionTarget(
+            Guid.NewGuid(),
+            user.Id,
+            new DateOnly(2026, 7, 1),
+            new NutritionValues(2200m, 150m, 75m, 230m));
+        var fake = new FakeLanguageModelClient([
+            new LanguageModelResponse("response-history", "Яблоко обсуждено.", []),
+            new LanguageModelResponse("response-current", "Продолжаем.", [])
+        ]);
+        using var factory = CreateFactory(fake);
+        await factory.SeedAsync(user, target);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var source = scope.ServiceProvider.GetRequiredService<IChatContextSource>();
+            _ = await source.GetAsync(
+                new ChatContextSourceRequest(user.Id, Guid.NewGuid(), UtcNow),
+                CancellationToken.None);
+        }
+        using var client = factory.CreateAuthenticatedClient(user.Id);
+
+        using var firstResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages",
+            new ChatMessageRequest("Запомни разговор про яблоко", "context-history", UtcNow),
+            CancellationToken.None);
+        using var secondResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages",
+            new ChatMessageRequest("Продолжим про яблоко", "context-current", UtcNow),
+            CancellationToken.None);
+
+        Assert.True(
+            firstResponse.StatusCode == HttpStatusCode.OK,
+            await firstResponse.Content.ReadAsStringAsync(CancellationToken.None));
+        Assert.True(
+            secondResponse.StatusCode == HttpStatusCode.OK,
+            await secondResponse.Content.ReadAsStringAsync(CancellationToken.None));
+        Assert.Equal(2, fake.Requests.Count);
+        var contextRequest = fake.Requests[1];
+        Assert.Collection(
+            contextRequest.Messages,
+            message =>
+            {
+                Assert.Equal(NutritionTracker.Domain.Chat.ChatRole.User, message.Role);
+                Assert.Equal("Запомни разговор про яблоко", message.Content);
+            },
+            message =>
+            {
+                Assert.Equal(NutritionTracker.Domain.Chat.ChatRole.Assistant, message.Role);
+                Assert.Equal("Яблоко обсуждено.", message.Content);
+            },
+            message => Assert.Equal("Продолжим про яблоко", message.Content));
+        Assert.Contains("Asia/Jerusalem", contextRequest.Instructions, StringComparison.Ordinal);
+        Assert.Contains("2200", contextRequest.Instructions, StringComparison.Ordinal);
+        Assert.Contains("grams", contextRequest.Instructions, StringComparison.Ordinal);
+        Assert.Contains("override conversation history", contextRequest.Instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ConfirmedPendingUpdateExecutesOnceAndRepeatedDeliveryReplays()
     {
         var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);

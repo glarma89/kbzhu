@@ -26,7 +26,10 @@ public static class ServiceCollectionExtensions
 
         services.AddDbContext<NutritionDbContext>(options => options.UseSqlite(connectionString));
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(ContextBuilderSettings.Default);
+        services.TryAddSingleton<IContextBuilder, ContextBuilder>();
         services.AddScoped<IUserMessageProcessingRepository, UserMessageProcessingRepository>();
+        services.AddScoped<IChatContextSource, ChatContextSource>();
         services.AddScoped<IMessageToolExecutor, AllowlistedToolExecutor>();
         services.AddScoped<IChatMessageService, ChatMessageService>();
         services.AddScoped<IFoodProductRepository, FoodProductRepository>();

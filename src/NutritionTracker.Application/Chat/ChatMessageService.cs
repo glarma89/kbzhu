@@ -10,6 +10,8 @@ public sealed class ChatMessageService(
     IUserMessageProcessingRepository repository,
     ILanguageModelClient languageModelClient,
     IMessageToolExecutor toolExecutor,
+    IChatContextSource contextSource,
+    IContextBuilder contextBuilder,
     ChatAgentSettings settings,
     TimeProvider timeProvider) : IChatMessageService
 {
@@ -138,18 +140,31 @@ public sealed class ChatMessageService(
         IReadOnlyList<LanguageModelToolOutput> toolOutputs = [];
         var executionStarted = stored.Processing.State == MessageProcessingState.Executing;
         var toolOrdinal = 0;
+        var contextSnapshot = await contextSource.GetAsync(
+            new ChatContextSourceRequest(
+                stored.Message.UserId,
+                stored.Message.Id,
+                occurredAt ?? stored.Message.CreatedAtUtc),
+            agentCancellationToken);
 
         try
         {
             for (var iteration = 0; iteration < settings.MaximumIterations; iteration++)
             {
+                var builtContext = contextBuilder.Build(new ContextBuildRequest(
+                    NutritionTrackerSystemInstructions.Build(
+                        occurredAt ?? stored.Message.CreatedAtUtc),
+                    stored.Message.Id,
+                    stored.Message.Content,
+                    contextSnapshot,
+                    toolOutputs,
+                    previousResponseId is null));
                 var response = await languageModelClient.CreateResponseAsync(
                     new LanguageModelRequest(
-                        NutritionTrackerSystemInstructions.Build(
-                            occurredAt ?? stored.Message.CreatedAtUtc),
-                        previousResponseId is null ? stored.Message.Content : null,
+                        builtContext.Instructions,
+                        builtContext.Messages,
                         previousResponseId,
-                        toolOutputs,
+                        builtContext.ToolOutputs,
                         Tools),
                     agentCancellationToken);
 
