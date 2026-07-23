@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NutritionTracker.Infrastructure.Persistence;
+using NutritionTracker.IntegrationTests.Fakes;
 
 namespace NutritionTracker.IntegrationTests;
 
@@ -33,6 +35,15 @@ internal sealed class FoodApiWebApplicationFactory : WebApplicationFactory<Progr
         {
             builder.ConfigureTestServices(_configureServices);
         }
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = TestAuthenticationHandler.SchemeName;
+                options.DefaultChallengeScheme = TestAuthenticationHandler.SchemeName;
+            }).AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                TestAuthenticationHandler.SchemeName, _ => { });
+        });
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
@@ -50,6 +61,14 @@ internal sealed class FoodApiWebApplicationFactory : WebApplicationFactory<Progr
         var context = scope.ServiceProvider.GetRequiredService<NutritionDbContext>();
         context.AddRange(entities);
         await context.SaveChangesAsync(CancellationToken.None);
+    }
+
+    public HttpClient CreateAuthenticatedClient(Guid userId)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add(
+            TestAuthenticationHandler.UserIdHeader, userId.ToString());
+        return client;
     }
 
     protected override void Dispose(bool disposing)

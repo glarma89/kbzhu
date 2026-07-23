@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, and persisted user-message/tool-execution recovery. React/TypeScript frontend work and authentication are not implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, and explicit chat confirmation/cancellation continuation. React/TypeScript frontend work and a concrete production identity provider are not implemented.
 
 `README.md` does not currently exist.
 
@@ -14,7 +14,7 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Current implementation stage: OpenAI Responses API chat integration and allowlisted tool execution, included in the current implementation-stage commit
+- Current implementation stage: trusted authenticated identity, explicit chat confirmation continuation, and the Russian assistant instruction, included in the current implementation-stage commit
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -89,7 +89,24 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added fake-language-model integration tests for sequential calls, duplicate delivery, authoritative calorie output, strict schemas, and the maximum agent-loop limit.
    - The official `OpenAI` .NET package 2.12.0 was evaluated, but its Responses surface emits `OPENAI001` evaluation diagnostics. Because warnings are errors and repository policy forbids suppressions, the integration uses the documented Responses HTTP API behind `ILanguageModelClient` instead.
 
-No frontend or authentication has been completed. Automated tests never invoke OpenAI.
+12. **Trusted identity and chat confirmation continuation** - included in the current implementation-stage commit
+   - Added an Application-owned current-user contract and a framework-neutral `sub` claim contract, resolved from validated claims only in the API layer.
+   - Protected food, recipe, meal, and chat endpoints and removed caller-supplied `userId` values from request bodies and query strings.
+   - Added an unconfigured production authentication scheme that rejects protected requests until a real provider is registered, plus a test-only authentication handler for migration-backed HTTP tests.
+   - Added `POST /api/chat/messages/{messageId}/confirmation` for explicit confirmation or cancellation using the normal chat response contract.
+   - Persists a canonical prepared-tool argument hash and verifies ownership, workflow state, allowlisted tool registration, confirmation requirement, arguments, hash, and the original idempotency key before execution.
+   - Confirmation binds fresh backend-owned evidence and executes only the persisted prepared operation; cancellation persists a terminal structured result without invoking a tool.
+   - Repeated confirmation and cancellation deliveries replay the persisted terminal response without executing a mutation twice.
+   - Added migration `20260723161419_AddChatConfirmationHash`, focused Application tests, and authenticated migration-backed HTTP tests. Automated tests continue to use `FakeLanguageModelClient` only.
+
+13. **Russian AI-assistant system instruction** - included in the current implementation-stage commit
+   - Replaced the short inline agent instruction with an Application-owned canonical instruction used by every language-model request.
+   - Requires Russian natural-language understanding, tool-authoritative mutation status and nutrition values, candidate selection, minimal clarification, intent separation, one-off recipe handling, confirmation gates, user-time-zone handling, and concise backend-derived summaries.
+   - Explicitly resists prompt injection, arbitrary SQL/database access, tool-policy bypass, secret disclosure, invented identifiers, and invented nutrition data.
+   - Keeps user products, recipes, and diary content out of the system instruction; those records may enter model context only through registered tools and only as needed.
+   - Added a documentation specification with ten synthetic positive/negative dialogue scenarios and a focused Application test protecting the instruction's critical rules.
+
+No frontend or concrete production identity-provider adapter has been completed. Automated tests never invoke OpenAI.
 
 ## Current architecture
 
@@ -105,9 +122,9 @@ NutritionTracker.Api             -> NutritionTracker.Application + NutritionTrac
 Current responsibilities:
 
 - `NutritionTracker.Domain`: entities, value objects, invariants, enums, and deterministic nutrition calculations.
-- `NutritionTracker.Application`: food-product, recipe, meal-journal, and chat commands, queries, results, validation, orchestration services, repository abstractions, Application exceptions, provider-independent LLM/tool contracts, and the bounded agent loop.
+- `NutritionTracker.Application`: food-product, recipe, meal-journal, and chat commands, queries, results, validation, orchestration services, repository abstractions, the current-user and claim contracts, Application exceptions, provider-independent LLM/tool contracts, and the bounded agent loop.
 - `NutritionTracker.Infrastructure`: EF Core SQLite persistence, allowlisted tool dispatch, the OpenAI Responses HTTP adapter, entity configurations, migrations, and DI registration.
-- `NutritionTracker.Api`: composition root, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
+- `NutritionTracker.Api`: composition root, claims-based current-user resolution, authentication/authorization middleware, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
 - `NutritionTracker.Domain.Tests`: domain invariant and nutrition calculation tests.
 - `NutritionTracker.Application.Tests`: dependency-direction and food/recipe use-case tests.
 - `NutritionTracker.IntegrationTests`: health/OpenAPI tests and migration-backed temporary SQLite tests.
@@ -177,6 +194,9 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Completed structured tool results remain pending until the assistant response is marked delivered
 - Provider-independent `ILanguageModelClient` with sequential tool-call continuation
 - Bounded agent iterations, whole-loop cancellation/timeout, and persisted duplicate-delivery responses
+- Trusted authenticated user identity from the validated `sub` claim; HTTP payloads cannot select another user
+- Explicit pending-confirmation continuation with canonical argument binding and terminal cancellation
+- Canonical Russian assistant system instruction applied to every provider request
 
 ### Future LLM tool contract
 
@@ -229,9 +249,10 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - `GET /api/meals`
 - `GET /api/daily-summary`
 - `POST /api/chat/messages`
+- `POST /api/chat/messages/{messageId}/confirmation`
 - Application validation and not-found failures returned as `ProblemDetails`
 
-No nutrition-target mutation endpoint exists. Chat uses the tool contract through the OpenAI Responses API adapter or a test fake.
+Food, recipe, meal, and chat endpoints require the `AuthenticatedUser` authorization policy. No production identity provider is configured yet, so protected endpoints reject requests until one supplies a validated non-empty GUID `sub` claim. No nutrition-target mutation endpoint exists. Chat uses the tool contract through the OpenAI Responses API adapter or a test fake.
 
 ## Database status
 
@@ -272,8 +293,9 @@ Recipe versioning uses:
 - Meal journal migration: `20260723133852_AddMealJournal`
 - User-message processing migration: `20260723143351_AddUserMessageProcessing`
 - Chat tool-execution migration: `20260723151937_AddChatToolExecution`
+- Chat confirmation-hash migration: `20260723161419_AddChatConfirmationHash`
 - Model snapshot: `NutritionDbContextModelSnapshot`
-- All five migrations apply successfully to isolated temporary SQLite databases.
+- All six migrations apply successfully to isolated temporary SQLite databases.
 - The meal-journal migration preserves and converts legacy `OccurredAt` offset timestamps to UTC Unix milliseconds.
 - The latest calculator commit did not change persistence entities or mappings.
 - The recipe migration backfills legacy recipe/version data and product nutrition snapshots before adding the MealItem-to-version FK.
@@ -281,6 +303,30 @@ Recipe versioning uses:
 - The message-processing migration adds a one-to-one workflow row for each processed user `ChatMessage`, state-dependent check constraints, and duplicate-delivery/idempotency indexes.
 
 ## Verification status
+
+Implementation-stage verification on 2026-07-23 for the Russian AI-assistant system instruction:
+
+- `dotnet restore NutritionTracker.sln`: passed; all projects were up to date
+- `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 113/113 tests
+  - Domain tests: 43 passed
+  - Application tests: 45 passed
+  - Integration tests: 25 passed
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- `git diff --check`: passed
+- Automated tests use fake language-model clients; no real OpenAI request was made
+
+Implementation-stage verification on 2026-07-23 for trusted identity and chat confirmation continuation:
+
+- `dotnet restore NutritionTracker.sln`: passed after approved NuGet network access; the sandboxed attempt was blocked during repository-signature retrieval
+- `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 112/112 tests
+  - Domain tests: 43 passed
+  - Application tests: 44 passed
+  - Integration tests: 25 passed
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- `dotnet-ef migrations has-pending-model-changes`: passed; no model changes were reported
+- All HTTP integration tests use the test authentication handler and `FakeLanguageModelClient`; no real OpenAI request was made
 
 Implementation-stage verification on 2026-07-23 for OpenAI chat integration:
 
@@ -328,8 +374,7 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 - `README.md` does not exist.
 - Application use cases cover food products, recipes, meal journaling, daily summaries, and chat agent-loop orchestration.
 - There is no nutrition-target mutation endpoint.
-- Authentication, authorization, and trusted identity propagation remain incomplete; `userId` is still accepted by the HTTP request.
-- A confirmation-required tool returns `pendingConfirmation`; a dedicated confirmation HTTP continuation is not yet exposed.
+- A concrete production identity provider is not configured; the API currently defines the claims contract and intentionally rejects protected requests through its unconfigured authentication scheme.
 - React/TypeScript/Vite frontend is not present.
 - There is no external or seeded food-product catalog.
 - PostgreSQL support has not been implemented; only portability has been considered in architecture and mappings.
@@ -337,18 +382,18 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-Connect chat-message processing to the OpenAI Responses API through allowlisted tool calling.
+Create and integrate the Russian Nutrition Tracker AI-assistant system instruction with positive and negative behavioral dialogues.
 
-Status: implementation is complete, verified, and included in the current implementation-stage commit.
+Status: implementation and verification are complete and included in the current implementation-stage commit.
 
 ## Next task
 
-After commit authorization, a future stage may add authentication/trusted identity propagation and an explicit confirmation continuation endpoint.
+After commit authorization, a future stage may add automated multi-turn prompt-behavior evaluations, integrate a concrete production identity provider, or add nutrition-target mutation workflows.
 
 ## Previous verified baseline commit
 
 ```text
-c6e1834 feat(chat): add recoverable LLM tool workflow
+6f57745 feat(chat): integrate OpenAI tool-calling agent loop
 ```
 
-This was the latest committed and verified implementation stage before the current OpenAI chat-integration commit.
+This was the latest committed and verified implementation stage before the current authenticated-assistant workflow commit.

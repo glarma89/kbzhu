@@ -1,23 +1,25 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NutritionTracker.Application.Common;
 using NutritionTracker.Application.Recipes;
 
 namespace NutritionTracker.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = "AuthenticatedUser")]
 [Route("api/recipes")]
-public sealed class RecipesController(IRecipeService recipeService) : ControllerBase
+public sealed class RecipesController(IRecipeService recipeService, ICurrentUser currentUser) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<RecipeSummaryResult>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<RecipeSummaryResult>>> SearchAsync(
-        [FromQuery] Guid userId,
         [FromQuery] string? query,
         [FromQuery] bool includeArchived = false,
         [FromQuery] int limit = 25,
         CancellationToken cancellationToken = default)
     {
         var results = await recipeService.SearchRecipesAsync(
-            new SearchRecipesQuery(userId, query, includeArchived, limit),
+            new SearchRecipesQuery(currentUser.UserId, query, includeArchived, limit),
             cancellationToken);
         return Ok(results);
     }
@@ -27,12 +29,11 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<RecipeResult>> GetAsync(
         Guid id,
-        [FromQuery] Guid userId,
         [FromQuery] int? version,
         CancellationToken cancellationToken)
     {
         var result = await recipeService.GetRecipeAsync(
-            new GetRecipeQuery(id, userId, version),
+            new GetRecipeQuery(id, currentUser.UserId, version),
             cancellationToken);
         return Ok(result);
     }
@@ -44,8 +45,9 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
         CreateRecipeRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await recipeService.CreateRecipeAsync(request.ToCommand(), cancellationToken);
-        return Created($"/api/recipes/{result.Id}?userId={result.UserId}", result);
+        var result = await recipeService.CreateRecipeAsync(
+            request.ToCommand(currentUser.UserId), cancellationToken);
+        return Created($"/api/recipes/{result.Id}", result);
     }
 
     [HttpPut("{id:guid}")]
@@ -58,7 +60,8 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
         UpdateRecipeRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await recipeService.UpdateRecipeAsync(request.ToCommand(id), cancellationToken);
+        var result = await recipeService.UpdateRecipeAsync(
+            request.ToCommand(id, currentUser.UserId), cancellationToken);
         return Ok(result);
     }
 
@@ -72,7 +75,7 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
         CancellationToken cancellationToken)
     {
         var result = await recipeService.ArchiveRecipeAsync(
-            new ArchiveRecipeCommand(id, request.UserId, request.Reason, request.Source),
+            new ArchiveRecipeCommand(id, currentUser.UserId, request.Reason, request.Source),
             cancellationToken);
         return Ok(result);
     }
@@ -81,12 +84,11 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
     [ProducesResponseType<RecipeNutritionResult>(StatusCodes.Status200OK)]
     public async Task<ActionResult<RecipeNutritionResult>> CalculateNutritionAsync(
         Guid id,
-        [FromQuery] Guid userId,
         [FromQuery] int? version,
         CancellationToken cancellationToken)
     {
         var result = await recipeService.CalculateRecipeNutritionAsync(
-            new CalculateRecipeNutritionQuery(id, userId, version),
+            new CalculateRecipeNutritionQuery(id, currentUser.UserId, version),
             cancellationToken);
         return Ok(result);
     }
@@ -96,13 +98,12 @@ public sealed class RecipesController(IRecipeService recipeService) : Controller
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<RecipeNutritionResult>> CalculatePortionAsync(
         Guid id,
-        [FromQuery] Guid userId,
         [FromQuery] decimal weightGrams,
         [FromQuery] int? version,
         CancellationToken cancellationToken)
     {
         var result = await recipeService.CalculateRecipePortionAsync(
-            new CalculateRecipePortionQuery(id, userId, weightGrams, version),
+            new CalculateRecipePortionQuery(id, currentUser.UserId, weightGrams, version),
             cancellationToken);
         return Ok(result);
     }
@@ -114,7 +115,6 @@ public sealed record RecipeIngredientRequest(Guid FoodProductId, decimal WeightG
 }
 
 public sealed record CreateRecipeRequest(
-    Guid UserId,
     string Name,
     string? Description,
     decimal? TotalPreparedWeightGrams,
@@ -122,10 +122,10 @@ public sealed record CreateRecipeRequest(
     string? ChangeReason,
     string ChangeSource)
 {
-    public CreateRecipeCommand ToCommand()
+    public CreateRecipeCommand ToCommand(Guid userId)
     {
         return new CreateRecipeCommand(
-            UserId,
+            userId,
             Name,
             Description,
             TotalPreparedWeightGrams,
@@ -136,7 +136,6 @@ public sealed record CreateRecipeRequest(
 }
 
 public sealed record UpdateRecipeRequest(
-    Guid UserId,
     int ExpectedVersion,
     string Name,
     string? Description,
@@ -145,11 +144,11 @@ public sealed record UpdateRecipeRequest(
     string? ChangeReason,
     string ChangeSource)
 {
-    public UpdateRecipeCommand ToCommand(Guid id)
+    public UpdateRecipeCommand ToCommand(Guid id, Guid userId)
     {
         return new UpdateRecipeCommand(
             id,
-            UserId,
+            userId,
             ExpectedVersion,
             Name,
             Description,
@@ -160,4 +159,4 @@ public sealed record UpdateRecipeRequest(
     }
 }
 
-public sealed record ArchiveRecipeRequest(Guid UserId, string? Reason, string Source);
+public sealed record ArchiveRecipeRequest(string? Reason, string Source);

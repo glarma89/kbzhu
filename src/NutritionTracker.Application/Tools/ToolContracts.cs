@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -92,6 +94,13 @@ public static class ToolJson
         return JsonSerializer.Serialize(value, SerializerOptions);
     }
 
+    public static string Serialize(object value, Type type)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(type);
+        return JsonSerializer.Serialize(value, type, SerializerOptions);
+    }
+
     public static T Deserialize<T>(string json)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
@@ -146,5 +155,16 @@ public static class ToolJson
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, false));
         options.MakeReadOnly();
         return options;
+    }
+}
+
+public static class ToolArgumentsHash
+{
+    public static string Create(string toolName, string argumentsJson)
+    {
+        var definition = ToolCatalog.GetRequired(toolName);
+        var arguments = ToolJson.DeserializeArguments(argumentsJson, definition.ArgumentsType);
+        var canonicalJson = ToolJson.Serialize(arguments, definition.ArgumentsType);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson)));
     }
 }

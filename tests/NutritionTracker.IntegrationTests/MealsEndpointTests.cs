@@ -21,14 +21,13 @@ public sealed class MealsEndpointTests
     public async Task RepeatedFoodRequestCreatesOneItemAndUsesUserLocalDate()
     {
         using var factory = new FoodApiWebApplicationFactory();
-        using var client = factory.CreateClient();
         var user = new UserProfile(Guid.NewGuid(), "Meal user", "Asia/Jerusalem", UtcNow);
         var product = CreateProduct(new NutritionValues(200m, 20m, 10m, 30m));
         var target = new NutritionTarget(
             Guid.NewGuid(), user.Id, new DateOnly(2026, 7, 24), new NutritionValues(150m, 15m, 8m, 25m));
         await factory.SeedAsync(user, product, target);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
         var request = new AddFoodToMealRequest(
-            user.Id,
             "meal-request-1",
             product.Id,
             100m,
@@ -69,7 +68,6 @@ public sealed class MealsEndpointTests
     public async Task RecipeFractionCanBeUpdatedMovedAndDeleted()
     {
         using var factory = new FoodApiWebApplicationFactory();
-        using var client = factory.CreateClient();
         var user = new UserProfile(Guid.NewGuid(), "Meal user", "UTC", UtcNow);
         var product = CreateProduct(new NutritionValues(100m, 10m, 5m, 20m));
         var recipe = new Recipe(
@@ -83,11 +81,12 @@ public sealed class MealsEndpointTests
             "Integration test",
             UtcNow);
         await factory.SeedAsync(user, product, recipe);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
 
         using var addResponse = await client.PostAsJsonAsync(
             "/api/meals/items/recipe",
             new AddRecipeToMealRequest(
-                user.Id, "recipe-add", recipe.Id, null, 0.5m, UtcNow, MealType.Lunch, null),
+                "recipe-add", recipe.Id, null, 0.5m, UtcNow, MealType.Lunch, null),
             CancellationToken.None);
         var added = await addResponse.Content.ReadFromJsonAsync<MealOperationResult>(CancellationToken.None);
         Assert.True(
@@ -99,7 +98,7 @@ public sealed class MealsEndpointTests
 
         using var updateResponse = await client.PutAsJsonAsync(
             $"/api/meals/items/{added.MealItemId}",
-            new UpdateMealItemRequest(user.Id, "recipe-update", 100m, null, null),
+            new UpdateMealItemRequest("recipe-update", 100m, null, null),
             CancellationToken.None);
         var updated = await updateResponse.Content.ReadFromJsonAsync<MealOperationResult>(CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
@@ -109,7 +108,7 @@ public sealed class MealsEndpointTests
         using var moveResponse = await client.PutAsJsonAsync(
             $"/api/meals/items/{added.MealItemId}",
             new UpdateMealItemRequest(
-                user.Id, "recipe-move", null, UtcNow.AddDays(1), MealType.Dinner),
+                "recipe-move", null, UtcNow.AddDays(1), MealType.Dinner),
             CancellationToken.None);
         var moved = await moveResponse.Content.ReadFromJsonAsync<MealOperationResult>(CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, moveResponse.StatusCode);
@@ -117,7 +116,7 @@ public sealed class MealsEndpointTests
         Assert.Equal(new DateOnly(2026, 7, 24), moved.DailySummary.Date);
 
         using var deleteResponse = await client.DeleteAsync(
-            $"/api/meals/items/{added.MealItemId}?userId={user.Id}&idempotencyKey=recipe-delete",
+            $"/api/meals/items/{added.MealItemId}?idempotencyKey=recipe-delete",
             CancellationToken.None);
         var deleted = await deleteResponse.Content.ReadFromJsonAsync<MealOperationResult>(CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
@@ -126,7 +125,7 @@ public sealed class MealsEndpointTests
         Assert.Equal(0m, deleted.DailySummary.Consumed.Calories);
 
         using var summaryResponse = await client.GetAsync(
-            $"/api/daily-summary?userId={user.Id}&date=2026-07-24",
+            "/api/daily-summary?date=2026-07-24",
             CancellationToken.None);
         var summary = await summaryResponse.Content.ReadFromJsonAsync<DailySummaryResult>(CancellationToken.None);
         Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);

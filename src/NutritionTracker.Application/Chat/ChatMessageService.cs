@@ -42,17 +42,18 @@ public sealed class ChatMessageService(
 
         if (stored.Processing.State == MessageProcessingState.AwaitingClarification)
         {
-            return PendingResult(stored.Processing.PendingQuestion, null);
+            return PendingResult(stored.Message.Id, stored.Processing.PendingQuestion, null);
         }
 
         if (stored.Processing.State == MessageProcessingState.AwaitingConfirmation)
         {
-            return PendingResult(null, stored.Processing.PendingQuestion);
+            return PendingResult(stored.Message.Id, null, stored.Processing.PendingQuestion);
         }
 
         if (stored.Processing.State == MessageProcessingState.Failed)
         {
-            return new ChatMessageResult(DefaultFailureMessage, [], null, null, null);
+            return new ChatMessageResult(
+                stored.Message.Id, DefaultFailureMessage, [], null, null, null);
         }
 
         if (stored.Processing.State == MessageProcessingState.Received)
@@ -62,6 +63,43 @@ public sealed class ChatMessageService(
         }
 
         return await RunAgentLoopAsync(stored, command.OccurredAt, cancellationToken);
+    }
+
+    public async Task<ChatMessageResult> ContinueConfirmationAsync(
+        ContinueChatConfirmationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (command.MessageId == Guid.Empty || command.UserId == Guid.Empty)
+        {
+            throw new ApplicationValidationException("The identifier cannot be empty.");
+        }
+
+        var stored = await repository.GetByMessageIdAsync(
+            command.MessageId, command.UserId, cancellationToken)
+            ?? throw new EntityNotFoundException(nameof(UserMessageProcessing), command.MessageId);
+        if (stored.Processing.State == MessageProcessingState.Completed)
+        {
+            return ToolJson.Deserialize<ChatMessageResult>(
+                RequireResult(stored.Processing.ExecutionResultJson));
+        }
+
+        if (!command.Confirm)
+        {
+            if (stored.Processing.State != MessageProcessingState.AwaitingConfirmation)
+            {
+                throw new ApplicationConflictException(
+                    $"The message cannot be cancelled from state {stored.Processing.State}.");
+            }
+
+            var cancelled = new ChatMessageResult(
+                stored.Message.Id, "Operation cancelled.", [], null, null, null);
+            stored.Processing.Cancel(ToolJson.Serialize(cancelled), timeProvider.GetUtcNow());
+            await repository.SaveChangesAsync(cancellationToken);
+            return cancelled;
+        }
+
+        return await ConfirmPreparedOperationAsync(stored, cancellationToken);
     }
 
     private async Task<StoredUserMessage> GetOrCreateAsync(
@@ -107,7 +145,8 @@ public sealed class ChatMessageService(
             {
                 var response = await languageModelClient.CreateResponseAsync(
                     new LanguageModelRequest(
-                        BuildInstructions(occurredAt ?? stored.Message.CreatedAtUtc),
+                        NutritionTrackerSystemInstructions.Build(
+                            occurredAt ?? stored.Message.CreatedAtUtc),
                         previousResponseId is null ? stored.Message.Content : null,
                         previousResponseId,
                         toolOutputs,
@@ -123,6 +162,7 @@ public sealed class ChatMessageService(
                     }
 
                     var completed = new ChatMessageResult(
+                        stored.Message.Id,
                         assistantMessage,
                         actions,
                         null,
@@ -144,11 +184,17 @@ public sealed class ChatMessageService(
                         ToolJson.Serialize(new { response_id = response.ResponseId }),
                         confirmationCall.Definition.Name,
                         confirmationCall.Call.ArgumentsJson,
+                        ToolArgumentsHash.Create(
+                            confirmationCall.Definition.Name,
+                            confirmationCall.Call.ArgumentsJson),
                         idempotencyKey,
                         confirmationCall.Definition.ConfirmationDescription,
                         timeProvider.GetUtcNow());
                     await repository.SaveChangesAsync(agentCancellationToken);
-                    return PendingResult(null, confirmationCall.Definition.ConfirmationDescription);
+                    return PendingResult(
+                        stored.Message.Id,
+                        null,
+                        confirmationCall.Definition.ConfirmationDescription);
                 }
 
                 if (!executionStarted)
@@ -158,6 +204,7 @@ public sealed class ChatMessageService(
                         ToolJson.Serialize(new { response_id = response.ResponseId }),
                         first.Definition.Name,
                         first.Call.ArgumentsJson,
+                        ToolArgumentsHash.Create(first.Definition.Name, first.Call.ArgumentsJson),
                         CreateIdempotencyKey(stored.Message.Id, toolOrdinal, first.Definition),
                         timeProvider.GetUtcNow());
                     await repository.SaveChangesAsync(agentCancellationToken);
@@ -202,7 +249,7 @@ public sealed class ChatMessageService(
                 question,
                 timeProvider.GetUtcNow());
             await repository.SaveChangesAsync(cancellationToken);
-            return PendingResult(question, null);
+            return PendingResult(stored.Message.Id, question, null);
         }
         catch (JsonException)
         {
@@ -212,7 +259,7 @@ public sealed class ChatMessageService(
                 question,
                 timeProvider.GetUtcNow());
             await repository.SaveChangesAsync(cancellationToken);
-            return PendingResult(question, null);
+            return PendingResult(stored.Message.Id, question, null);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -287,16 +334,6 @@ public sealed class ChatMessageService(
         return current;
     }
 
-    private static string BuildInstructions(DateTimeOffset occurredAt)
-    {
-        return "You interpret one NutritionTracker user message. Use only the registered function tools. " +
-            "Never invent entity identifiers, nutrition values, or backend operations. Never calculate calories or macros. " +
-            "Use search tools before selecting an entity when no explicit ID is available, and never select among multiple " +
-            "matches without user clarification. Treat tool output as authoritative. Keep the final answer concise and in " +
-            "the user's language. Do not claim that a mutation succeeded unless its tool result says it succeeded. " +
-            $"The trusted request time is {occurredAt.ToUniversalTime():O}.";
-    }
-
     private static string BuildAuthoritativeSummaryMessage(DailySummaryToolResult summary)
     {
         return string.Create(
@@ -350,10 +387,104 @@ public sealed class ChatMessageService(
         }
     }
 
+    private async Task<ChatMessageResult> ConfirmPreparedOperationAsync(
+        StoredUserMessage stored,
+        CancellationToken cancellationToken)
+    {
+        var processing = stored.Processing;
+        if (processing.State == MessageProcessingState.AwaitingConfirmation)
+        {
+            ValidatePreparedOperation(processing);
+            processing.Confirm(timeProvider.GetUtcNow());
+            await repository.SaveChangesAsync(cancellationToken);
+        }
+        else if (processing.State != MessageProcessingState.Executing ||
+            processing.ConfirmedAtUtc is null)
+        {
+            throw new ApplicationConflictException(
+                $"The message cannot be confirmed from state {processing.State}.");
+        }
+
+        ValidatePreparedOperation(processing);
+        var toolName = processing.ToolName!;
+        var outcome = await toolExecutor.ExecuteAsync(
+            new MessageToolExecutionRequest(
+                toolName,
+                processing.ToolArgumentsJson!,
+                new ToolInvocationContext(
+                    stored.Message.UserId,
+                    processing.IdempotencyKey,
+                    stored.Message.Id,
+                    new ToolConfirmationEvidence(
+                        toolName,
+                        processing.ToolArgumentsHash!,
+                        processing.ConfirmedAtUtc!.Value))),
+            cancellationToken);
+        var action = new ExecutedActionResult(toolName, outcome.IsSuccess, outcome.ErrorCode);
+        var dailySummary = TryGetDailySummary(toolName, outcome, null);
+        var assistantMessage = outcome.IsSuccess
+            ? dailySummary is null
+                ? "Operation confirmed and completed."
+                : BuildAuthoritativeSummaryMessage(dailySummary)
+            : outcome.ErrorMessage ?? "The confirmed operation could not be completed.";
+        var result = new ChatMessageResult(
+            stored.Message.Id, assistantMessage, [action], null, null, dailySummary);
+        processing.CompleteExecution(ToolJson.Serialize(result), timeProvider.GetUtcNow());
+        await repository.SaveChangesAsync(cancellationToken);
+        return result;
+    }
+
+    private static void ValidatePreparedOperation(UserMessageProcessing processing)
+    {
+        ToolDefinition definition;
+        try
+        {
+            definition = ToolCatalog.GetRequired(processing.ToolName ?? string.Empty);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new ApplicationConflictException(
+                "The prepared operation references an unregistered tool.");
+        }
+
+        if (definition.ConfirmationRequirement != ToolConfirmationRequirement.Required ||
+            string.IsNullOrWhiteSpace(processing.ToolArgumentsJson) ||
+            string.IsNullOrWhiteSpace(processing.ToolArgumentsHash) ||
+            string.IsNullOrWhiteSpace(processing.IdempotencyKey))
+        {
+            throw new ApplicationConflictException("The prepared operation is not confirmable.");
+        }
+
+        string currentHash;
+        try
+        {
+            currentHash = ToolArgumentsHash.Create(definition.Name, processing.ToolArgumentsJson);
+        }
+        catch (Exception exception) when (
+            exception is JsonException or ToolArgumentsValidationException)
+        {
+            throw new ApplicationConflictException(
+                "The prepared operation arguments are invalid.");
+        }
+
+        if (!string.Equals(currentHash, processing.ToolArgumentsHash, StringComparison.Ordinal))
+        {
+            throw new ApplicationConflictException(
+                "The prepared operation arguments no longer match their canonical hash.");
+        }
+    }
+
     private static ChatMessageResult PendingResult(
+        Guid messageId,
         string? clarification,
         string? confirmation) =>
-        new(clarification ?? confirmation ?? string.Empty, [], clarification, confirmation, null);
+        new(
+            messageId,
+            clarification ?? confirmation ?? string.Empty,
+            [],
+            clarification,
+            confirmation,
+            null);
 
     private static void Validate(SendChatMessageCommand command)
     {

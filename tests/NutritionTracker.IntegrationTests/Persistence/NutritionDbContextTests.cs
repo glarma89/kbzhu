@@ -26,8 +26,8 @@ public sealed class NutritionDbContextTests
         var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellation.Token);
 
         Assert.True(canConnect);
-        Assert.Equal(5, appliedMigrations.Count());
-        Assert.EndsWith("AddChatToolExecution", appliedMigrations.Last(), StringComparison.Ordinal);
+        Assert.Equal(6, appliedMigrations.Count());
+        Assert.EndsWith("AddChatConfirmationHash", appliedMigrations.Last(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,6 +299,7 @@ public sealed class NutritionDbContextTests
             "{\"intent\":\"add_food\"}",
             "add_food_to_diary",
             "{\"food_product_id\":\"a7a7758a-068d-45c9-b9b2-e7b7683d4631\",\"weight_grams\":180}",
+            "HASH",
             "message:123:add_food_to_diary",
             UtcNow);
         processing.CompleteExecution(

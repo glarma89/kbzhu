@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authentication;
+using NutritionTracker.Api.Authentication;
 using NutritionTracker.Api.Errors;
+using NutritionTracker.Application.Common;
 using NutritionTracker.Infrastructure;
 using NutritionTracker.Application.Chat;
 using NutritionTracker.Infrastructure.LanguageModels;
@@ -10,6 +13,17 @@ var nutritionDatabaseConnectionString = builder.Configuration
     ?? throw new InvalidOperationException("Connection string 'NutritionDatabase' is not configured.");
 
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, ClaimsCurrentUser>();
+builder.Services.AddAuthentication("Unconfigured")
+    .AddScheme<AuthenticationSchemeOptions, UnconfiguredAuthenticationHandler>(
+        "Unconfigured", _ => { });
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AuthenticatedUser", policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(context =>
+            Guid.TryParse(
+                context.User.FindFirst(UserIdentityClaimTypes.UserId)?.Value,
+                out var userId) && userId != Guid.Empty));
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 builder.Services.AddProblemDetails(options =>
 {
@@ -54,6 +68,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

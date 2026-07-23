@@ -16,6 +16,7 @@ public sealed class UserMessageProcessingTests
             "{\"intent\":\"add_food\"}",
             "add_food_to_diary",
             "{\"weight_grams\":180}",
+            "HASH",
             "message:key",
             At(4));
         processing.CompleteExecution("{\"diary_item_id\":\"result\"}", At(5));
@@ -36,6 +37,7 @@ public sealed class UserMessageProcessingTests
             "{\"intent\":\"update_recipe\"}",
             "update_recipe",
             "{\"recipe_id\":\"result\"}",
+            "HASH",
             "message:key",
             "Confirm replacement?",
             At(2));
@@ -68,7 +70,8 @@ public sealed class UserMessageProcessingTests
     {
         var processing = CreateProcessing();
         processing.StartInterpreting(At(1));
-        processing.BeginExecution("{}", "add_food_to_diary", "{}", "message:key", At(2));
+        processing.BeginExecution(
+            "{}", "add_food_to_diary", "{}", "HASH", "message:key", At(2));
         processing.Fail("temporary", "Temporary failure", At(3));
 
         processing.Retry(At(4));
@@ -83,11 +86,12 @@ public sealed class UserMessageProcessingTests
     {
         var processing = CreateProcessing();
         processing.StartInterpreting(At(1));
-        processing.BeginExecution("{}", "add_food_to_diary", "{}", "message:key", At(2));
+        processing.BeginExecution(
+            "{}", "add_food_to_diary", "{}", "HASH", "message:key", At(2));
         processing.CompleteExecution("{}", At(3));
 
         Assert.Throws<InvalidOperationException>(() => processing.BeginExecution(
-            "{}", "add_food_to_diary", "{}", "other-key", At(4)));
+            "{}", "add_food_to_diary", "{}", "HASH", "other-key", At(4)));
     }
 
     [Fact]
@@ -95,7 +99,7 @@ public sealed class UserMessageProcessingTests
     {
         var processing = CreateProcessing();
         processing.StartInterpreting(At(1));
-        processing.BeginExecution("{}", "get_daily_summary", "{}", null, At(2));
+        processing.BeginExecution("{}", "get_daily_summary", "{}", "HASH", null, At(2));
         processing.CompleteExecution("{\"date\":\"2026-07-23\"}", At(3));
 
         processing.MarkResponseDelivered(At(4));

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NutritionTracker.Api.Controllers;
 using NutritionTracker.Application.Chat;
+using NutritionTracker.Application.Tools;
 using NutritionTracker.Domain.Foods;
 using NutritionTracker.Domain.Nutrition;
 using NutritionTracker.Domain.Users;
@@ -17,6 +18,104 @@ namespace NutritionTracker.IntegrationTests;
 public sealed class ChatEndpointTests
 {
     private static readonly DateTimeOffset UtcNow = new(2026, 7, 23, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task ConfirmedPendingUpdateExecutesOnceAndRepeatedDeliveryReplays()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);
+        var food = new FoodProduct(
+            Guid.NewGuid(), user.Id, "Apple", null,
+            new NutritionValues(100m, 1m, 0m, 25m), null, "Test", false, UtcNow, UtcNow);
+        var arguments = ToolJson.Serialize(new UpdateFoodArguments(
+            food.Id, "Green apple", null, 105m, 1m, 0m, 26m, null, "Correct label"));
+        var fake = new FakeLanguageModelClient([
+            new LanguageModelResponse("response-confirm", null,
+                [new LanguageModelToolCall("call-update", "update_food", arguments)])
+        ]);
+        using var factory = CreateFactory(fake);
+        await factory.SeedAsync(user, food);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
+
+        using var pendingResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages",
+            new ChatMessageRequest("Update the apple", "confirm-message", UtcNow),
+            CancellationToken.None);
+        var pending = await pendingResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+        Assert.NotNull(pending);
+        Assert.NotNull(pending.PendingConfirmation);
+
+        using var confirmedResponse = await client.PostAsJsonAsync(
+            $"/api/chat/messages/{pending.MessageId}/confirmation",
+            new ChatConfirmationRequest(true),
+            CancellationToken.None);
+        using var repeatedResponse = await client.PostAsJsonAsync(
+            $"/api/chat/messages/{pending.MessageId}/confirmation",
+            new ChatConfirmationRequest(true),
+            CancellationToken.None);
+        var confirmed = await confirmedResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+        var repeated = await repeatedResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, confirmedResponse.StatusCode);
+        Assert.Equal(confirmed?.MessageId, repeated?.MessageId);
+        Assert.Equal(confirmed?.AssistantMessage, repeated?.AssistantMessage);
+        Assert.Equal(confirmed?.ExecutedActions, repeated?.ExecutedActions);
+        Assert.Single(confirmed!.ExecutedActions);
+        Assert.Single(fake.Requests);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<NutritionDbContext>();
+        Assert.Equal("Green apple", (await context.FoodProducts.SingleAsync(
+            item => item.Id == food.Id, CancellationToken.None)).Name);
+        Assert.Equal(1, await context.ToolExecutions.CountAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CancelledPendingUpdateIsTerminalAndNeverExecutes()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);
+        var food = new FoodProduct(
+            Guid.NewGuid(), user.Id, "Apple", null,
+            new NutritionValues(100m, 1m, 0m, 25m), null, "Test", false, UtcNow, UtcNow);
+        var arguments = ToolJson.Serialize(new UpdateFoodArguments(
+            food.Id, "Changed", null, 105m, 1m, 0m, 26m, null, "Correct label"));
+        var fake = new FakeLanguageModelClient([
+            new LanguageModelResponse("response-cancel", null,
+                [new LanguageModelToolCall("call-update", "update_food", arguments)])
+        ]);
+        using var factory = CreateFactory(fake);
+        await factory.SeedAsync(user, food);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
+        var pendingResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages",
+            new ChatMessageRequest("Update the apple", "cancel-message", UtcNow),
+            CancellationToken.None);
+        var pending = await pendingResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+
+        using var cancelledResponse = await client.PostAsJsonAsync(
+            $"/api/chat/messages/{pending!.MessageId}/confirmation",
+            new ChatConfirmationRequest(false),
+            CancellationToken.None);
+        using var repeatedResponse = await client.PostAsJsonAsync(
+            $"/api/chat/messages/{pending.MessageId}/confirmation",
+            new ChatConfirmationRequest(false),
+            CancellationToken.None);
+        var cancelled = await cancelledResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+        var repeated = await repeatedResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+
+        Assert.Equal(cancelled?.MessageId, repeated?.MessageId);
+        Assert.Equal(cancelled?.AssistantMessage, repeated?.AssistantMessage);
+        Assert.Empty(cancelled!.ExecutedActions);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<NutritionDbContext>();
+        Assert.Equal("Apple", (await context.FoodProducts.SingleAsync(
+            item => item.Id == food.Id, CancellationToken.None)).Name);
+        Assert.Equal(0, await context.ToolExecutions.CountAsync(CancellationToken.None));
+    }
 
     [Fact]
     public async Task ExecutesSequentialToolsAndReturnsBackendDailySummary()
@@ -55,9 +154,8 @@ public sealed class ChatEndpointTests
         ]);
         using var factory = CreateFactory(fake);
         await factory.SeedAsync(user, food);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient(user.Id);
         var request = new ChatMessageRequest(
-            user.Id,
             "Добавь 100 г яблока на обед",
             "client-message-1",
             UtcNow);
@@ -123,11 +221,11 @@ public sealed class ChatEndpointTests
         ]);
         using var factory = CreateFactory(fake, maximumIterations: 2);
         await factory.SeedAsync(user);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient(user.Id);
 
         using var response = await client.PostAsJsonAsync(
             "/api/chat/messages",
-            new ChatMessageRequest(user.Id, "Покажи итог", "client-message-limit", UtcNow),
+            new ChatMessageRequest("Покажи итог", "client-message-limit", UtcNow),
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
@@ -167,9 +265,9 @@ public sealed class ChatEndpointTests
         };
         using var factory = CreateFactory(fake);
         await factory.SeedAsync(user, food);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient(user.Id);
         var request = new ChatMessageRequest(
-            user.Id, "Добавь яблоко", "client-message-ambiguous", UtcNow);
+            "Добавь яблоко", "client-message-ambiguous", UtcNow);
 
         using var failedResponse = await client.PostAsJsonAsync(
             "/api/chat/messages", request, CancellationToken.None);

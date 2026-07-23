@@ -30,6 +30,7 @@ internal sealed class UserMessageProcessingConfiguration
         builder.Property(processing => processing.ClarificationResponse).HasMaxLength(2_000);
         builder.Property(processing => processing.ToolName).HasMaxLength(100);
         builder.Property(processing => processing.ToolArgumentsJson);
+        builder.Property(processing => processing.ToolArgumentsHash).HasMaxLength(64);
         builder.Property(processing => processing.IdempotencyKey).HasMaxLength(200);
         builder.Property(processing => processing.ExecutionResultJson);
         builder.Property(processing => processing.FailureCode).HasMaxLength(100);

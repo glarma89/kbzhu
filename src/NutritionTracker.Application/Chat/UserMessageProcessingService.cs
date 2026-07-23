@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using NutritionTracker.Application.Common;
 using NutritionTracker.Application.Tools;
@@ -201,6 +199,7 @@ public sealed class UserMessageProcessingService(
                     interpretation.InterpretationJson,
                     toolName,
                     argumentsJson,
+                    ToolArgumentsHash.Create(toolName, argumentsJson),
                     idempotencyKey,
                     interpretation.UserQuestion ?? definition.ConfirmationDescription,
                     timeProvider.GetUtcNow());
@@ -212,6 +211,7 @@ public sealed class UserMessageProcessingService(
                 interpretation.InterpretationJson,
                 toolName,
                 argumentsJson,
+                ToolArgumentsHash.Create(toolName, argumentsJson),
                 idempotencyKey,
                 timeProvider.GetUtcNow());
             await repository.SaveChangesAsync(cancellationToken);
@@ -245,7 +245,7 @@ public sealed class UserMessageProcessingService(
         {
             confirmation = new ToolConfirmationEvidence(
                 toolName,
-                CreateArgumentsHash(argumentsJson),
+                ToolArgumentsHash.Create(toolName, argumentsJson),
                 processing.ConfirmedAtUtc.Value);
         }
 
@@ -315,9 +315,6 @@ public sealed class UserMessageProcessingService(
 
     private static string CreateIdempotencyKey(Guid messageId, string toolName) =>
         $"message:{messageId:N}:{toolName}";
-
-    private static string CreateArgumentsHash(string argumentsJson) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(argumentsJson)));
 
     private static void ValidateJsonObject(string json, string parameterName)
     {

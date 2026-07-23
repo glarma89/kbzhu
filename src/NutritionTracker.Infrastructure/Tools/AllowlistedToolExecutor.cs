@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NutritionTracker.Application.Chat;
@@ -75,7 +73,7 @@ internal sealed partial class AllowlistedToolExecutor(
             return Failure("idempotency_required", "A backend idempotency key is required.");
         }
 
-        var argumentsHash = CreateArgumentsHash(request.ArgumentsJson);
+        var argumentsHash = ToolArgumentsHash.Create(definition.Name, request.ArgumentsJson);
         var existing = await context.ToolExecutions.AsNoTracking().SingleOrDefaultAsync(
             item => item.UserId == request.Context.UserId &&
                 item.IdempotencyKey == idempotencyKey,
@@ -527,8 +525,6 @@ internal sealed partial class AllowlistedToolExecutor(
             string.Equals(confirmation.CanonicalArgumentsHash, argumentsHash, StringComparison.Ordinal);
     }
 
-    private static string CreateArgumentsHash(string argumentsJson) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(argumentsJson)));
 
     private static string RequireIdempotencyKey(ToolInvocationContext context) =>
         context.IdempotencyKey

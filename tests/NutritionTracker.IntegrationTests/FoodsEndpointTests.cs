@@ -13,11 +13,24 @@ public sealed class FoodsEndpointTests
     private static readonly DateTimeOffset UtcNow = new(2026, 7, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task CreateGetAndUpdateFoodProductRoundTrip()
+    public async Task ProtectedEndpointRejectsUnauthenticatedRequest()
     {
         using var factory = new FoodApiWebApplicationFactory();
         using var client = factory.CreateClient();
-        var createRequest = CreateRequest(null, " Greek  yogurt ");
+
+        using var response = await client.GetAsync("/api/foods", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateGetAndUpdateFoodProductRoundTrip()
+    {
+        using var factory = new FoodApiWebApplicationFactory();
+        var user = new UserProfile(Guid.NewGuid(), "Owner", "UTC", UtcNow);
+        await factory.SeedAsync(user);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
+        var createRequest = CreateRequest(" Greek  yogurt ");
 
         using var createResponse = await client.PostAsJsonAsync(
             "/api/foods",
@@ -32,7 +45,6 @@ public sealed class FoodsEndpointTests
         Assert.Equal(120m, created.CaloriesPer100g);
 
         var updateRequest = new UpdateFoodProductRequest(
-            null,
             "Strained yogurt",
             "Dairy",
             130m,
@@ -68,16 +80,16 @@ public sealed class FoodsEndpointTests
     public async Task CandidateSearchReturnsPersonalBeforeGlobalAndKeepsBoth()
     {
         using var factory = new FoodApiWebApplicationFactory();
-        using var client = factory.CreateClient();
         var user = new UserProfile(Guid.NewGuid(), "Owner", "UTC", UtcNow);
         var personal = CreateProduct(user.Id, "Greek yogurt", false);
         var global = CreateProduct(null, "Greek yogurt", true);
         await factory.SeedAsync(user, personal, global);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
 
         var requestUris = new[]
         {
-            $"/api/foods?query=greek%20yogurt&userId={user.Id}",
-            $"/api/foods/candidates?name=greek%20yogurt&userId={user.Id}"
+            "/api/foods?query=greek%20yogurt",
+            "/api/foods/candidates?name=greek%20yogurt"
         };
 
         foreach (var requestUri in requestUris)
@@ -98,18 +110,19 @@ public sealed class FoodsEndpointTests
     public async Task ProductOwnedByAnotherUserIsNotVisibleOrEditable()
     {
         using var factory = new FoodApiWebApplicationFactory();
-        using var client = factory.CreateClient();
         var owner = new UserProfile(Guid.NewGuid(), "Owner", "UTC", UtcNow);
         var product = CreateProduct(owner.Id, "Private yogurt", false);
-        await factory.SeedAsync(owner, product);
         var otherUserId = Guid.NewGuid();
+        var otherUser = new UserProfile(otherUserId, "Other", "UTC", UtcNow);
+        await factory.SeedAsync(owner, otherUser, product);
+        using var client = factory.CreateAuthenticatedClient(otherUserId);
 
         using var getResponse = await client.GetAsync(
-            $"/api/foods/{product.Id}?userId={otherUserId}",
+            $"/api/foods/{product.Id}",
             CancellationToken.None);
         using var updateResponse = await client.PutAsJsonAsync(
             $"/api/foods/{product.Id}",
-            CreateUpdateRequest(otherUserId, "Changed"),
+            CreateUpdateRequest("Changed"),
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -120,8 +133,10 @@ public sealed class FoodsEndpointTests
     public async Task InvalidNutritionReturnsProblemDetails()
     {
         using var factory = new FoodApiWebApplicationFactory();
-        using var client = factory.CreateClient();
-        var request = CreateRequest(null, "Invalid") with { ProteinPer100g = 101m };
+        var user = new UserProfile(Guid.NewGuid(), "Owner", "UTC", UtcNow);
+        await factory.SeedAsync(user);
+        using var client = factory.CreateAuthenticatedClient(user.Id);
+        var request = CreateRequest("Invalid") with { ProteinPer100g = 101m };
 
         using var response = await client.PostAsJsonAsync(
             "/api/foods",
@@ -132,10 +147,9 @@ public sealed class FoodsEndpointTests
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
-    private static CreateFoodProductRequest CreateRequest(Guid? userId, string name)
+    private static CreateFoodProductRequest CreateRequest(string name)
     {
         return new CreateFoodProductRequest(
-            userId,
             name,
             null,
             120m,
@@ -147,10 +161,9 @@ public sealed class FoodsEndpointTests
             false);
     }
 
-    private static UpdateFoodProductRequest CreateUpdateRequest(Guid? userId, string name)
+    private static UpdateFoodProductRequest CreateUpdateRequest(string name)
     {
         return new UpdateFoodProductRequest(
-            userId,
             name,
             null,
             120m,

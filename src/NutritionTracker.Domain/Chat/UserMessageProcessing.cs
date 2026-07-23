@@ -41,6 +41,8 @@ public sealed class UserMessageProcessing
 
     public string? ToolArgumentsJson { get; private set; }
 
+    public string? ToolArgumentsHash { get; private set; }
+
     public string? IdempotencyKey { get; private set; }
 
     public string? ExecutionResultJson { get; private set; }
@@ -93,12 +95,14 @@ public sealed class UserMessageProcessing
         string interpretationJson,
         string toolName,
         string toolArgumentsJson,
+        string toolArgumentsHash,
         string? idempotencyKey,
         string question,
         DateTimeOffset changedAtUtc)
     {
         EnsureOneOf(MessageProcessingState.Interpreting, MessageProcessingState.Executing);
-        SetPreparedOperation(interpretationJson, toolName, toolArgumentsJson, idempotencyKey);
+        SetPreparedOperation(
+            interpretationJson, toolName, toolArgumentsJson, toolArgumentsHash, idempotencyKey);
         PendingQuestion = DomainGuard.RequiredText(question, nameof(question));
         SetState(MessageProcessingState.AwaitingConfirmation, changedAtUtc);
     }
@@ -115,11 +119,13 @@ public sealed class UserMessageProcessing
         string interpretationJson,
         string toolName,
         string toolArgumentsJson,
+        string toolArgumentsHash,
         string? idempotencyKey,
         DateTimeOffset changedAtUtc)
     {
         EnsureState(MessageProcessingState.Interpreting);
-        SetPreparedOperation(interpretationJson, toolName, toolArgumentsJson, idempotencyKey);
+        SetPreparedOperation(
+            interpretationJson, toolName, toolArgumentsJson, toolArgumentsHash, idempotencyKey);
         SetState(MessageProcessingState.Executing, changedAtUtc);
     }
 
@@ -203,11 +209,13 @@ public sealed class UserMessageProcessing
         string interpretationJson,
         string toolName,
         string toolArgumentsJson,
+        string toolArgumentsHash,
         string? idempotencyKey)
     {
         InterpretationJson = DomainGuard.RequiredText(interpretationJson, nameof(interpretationJson));
         ToolName = DomainGuard.RequiredText(toolName, nameof(toolName));
         ToolArgumentsJson = DomainGuard.RequiredText(toolArgumentsJson, nameof(toolArgumentsJson));
+        ToolArgumentsHash = DomainGuard.RequiredText(toolArgumentsHash, nameof(toolArgumentsHash));
         IdempotencyKey = DomainGuard.OptionalText(idempotencyKey);
     }
 

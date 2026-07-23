@@ -1,23 +1,27 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NutritionTracker.Application.Common;
 using NutritionTracker.Application.Foods;
 
 namespace NutritionTracker.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = "AuthenticatedUser")]
 [Route("api/foods")]
-public sealed class FoodsController(IFoodProductService foodProductService) : ControllerBase
+public sealed class FoodsController(
+    IFoodProductService foodProductService,
+    ICurrentUser currentUser) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<FoodProductResult>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<FoodProductResult>>> SearchAsync(
         [FromQuery] string? query,
-        [FromQuery] Guid? userId,
         [FromQuery] int limit = 25,
         CancellationToken cancellationToken = default)
     {
         var results = await foodProductService.SearchFoodProductsAsync(
-            new SearchFoodProductsQuery(userId, query, limit),
+            new SearchFoodProductsQuery(currentUser.UserId, query, limit),
             cancellationToken);
         return Ok(results);
     }
@@ -27,12 +31,11 @@ public sealed class FoodsController(IFoodProductService foodProductService) : Co
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<FoodProductResult>>> FindCandidatesAsync(
         [FromQuery] string name,
-        [FromQuery] Guid? userId,
         [FromQuery] int limit = 10,
         CancellationToken cancellationToken = default)
     {
         var results = await foodProductService.FindCandidatesByNameAsync(
-            new FindCandidatesByNameQuery(userId, name, limit),
+            new FindCandidatesByNameQuery(currentUser.UserId, name, limit),
             cancellationToken);
         return Ok(results);
     }
@@ -42,11 +45,10 @@ public sealed class FoodsController(IFoodProductService foodProductService) : Co
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<FoodProductResult>> GetByIdAsync(
         Guid id,
-        [FromQuery] Guid? userId,
         CancellationToken cancellationToken)
     {
         var result = await foodProductService.GetFoodProductByIdAsync(
-            new GetFoodProductByIdQuery(id, userId),
+            new GetFoodProductByIdQuery(id, currentUser.UserId),
             cancellationToken);
         return Ok(result);
     }
@@ -59,12 +61,9 @@ public sealed class FoodsController(IFoodProductService foodProductService) : Co
         CancellationToken cancellationToken)
     {
         var result = await foodProductService.CreateFoodProductAsync(
-            request.ToCommand(),
+            request.ToCommand(currentUser.UserId),
             cancellationToken);
-        var location = result.UserId is null
-            ? $"/api/foods/{result.Id}"
-            : $"/api/foods/{result.Id}?userId={result.UserId}";
-        return Created(location, result);
+        return Created($"/api/foods/{result.Id}", result);
     }
 
     [HttpPut("{id:guid}")]
@@ -77,14 +76,13 @@ public sealed class FoodsController(IFoodProductService foodProductService) : Co
         CancellationToken cancellationToken)
     {
         var result = await foodProductService.UpdateFoodProductAsync(
-            request.ToCommand(id),
+            request.ToCommand(id, currentUser.UserId),
             cancellationToken);
         return Ok(result);
     }
 }
 
 public sealed record CreateFoodProductRequest(
-    Guid? UserId,
     string Name,
     string? Brand,
     decimal CaloriesPer100g,
@@ -95,10 +93,10 @@ public sealed record CreateFoodProductRequest(
     string Source,
     bool IsVerified)
 {
-    public CreateFoodProductCommand ToCommand()
+    public CreateFoodProductCommand ToCommand(Guid userId)
     {
         return new CreateFoodProductCommand(
-            UserId,
+            userId,
             Name,
             Brand,
             CaloriesPer100g,
@@ -112,7 +110,6 @@ public sealed record CreateFoodProductRequest(
 }
 
 public sealed record UpdateFoodProductRequest(
-    Guid? UserId,
     string Name,
     string? Brand,
     decimal CaloriesPer100g,
@@ -123,11 +120,11 @@ public sealed record UpdateFoodProductRequest(
     string Source,
     bool IsVerified)
 {
-    public UpdateFoodProductCommand ToCommand(Guid id)
+    public UpdateFoodProductCommand ToCommand(Guid id, Guid userId)
     {
         return new UpdateFoodProductCommand(
             id,
-            UserId,
+            userId,
             Name,
             Brand,
             CaloriesPer100g,

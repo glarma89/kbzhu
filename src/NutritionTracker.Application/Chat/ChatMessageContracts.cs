@@ -8,12 +8,15 @@ public sealed record SendChatMessageCommand(
     string ClientMessageId,
     DateTimeOffset? OccurredAt);
 
+public sealed record ContinueChatConfirmationCommand(Guid MessageId, Guid UserId, bool Confirm);
+
 public sealed record ExecutedActionResult(
     string ToolName,
     bool IsSuccess,
     string? ErrorCode);
 
 public sealed record ChatMessageResult(
+    Guid MessageId,
     string AssistantMessage,
     IReadOnlyList<ExecutedActionResult> ExecutedActions,
     string? PendingClarification,
@@ -31,5 +34,9 @@ public interface IChatMessageService
 {
     Task<ChatMessageResult> SendAsync(
         SendChatMessageCommand command,
+        CancellationToken cancellationToken);
+
+    Task<ChatMessageResult> ContinueConfirmationAsync(
+        ContinueChatConfirmationCommand command,
         CancellationToken cancellationToken);
 }

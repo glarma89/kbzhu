@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NutritionTracker.Application.Common;
 using NutritionTracker.Application.Meals;
@@ -6,8 +7,9 @@ using NutritionTracker.Domain.Meals;
 namespace NutritionTracker.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = "AuthenticatedUser")]
 [Route("api/meals")]
-public sealed class MealsController(IMealService mealService) : ControllerBase
+public sealed class MealsController(IMealService mealService, ICurrentUser currentUser) : ControllerBase
 {
     [HttpPost("items/food")]
     [ProducesResponseType<MealOperationResult>(StatusCodes.Status201Created)]
@@ -19,7 +21,7 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await mealService.AddFoodToMealAsync(
-            request.ToCommand(), cancellationToken);
+            request.ToCommand(currentUser.UserId), cancellationToken);
         return result.IsReplay
             ? Ok(result)
             : Created($"/api/meals/items/{result.MealItemId}", result);
@@ -38,12 +40,12 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
         if (request.WeightGrams is not null && request.Fraction is null)
         {
             result = await mealService.AddRecipePortionToMealAsync(
-                request.ToPortionCommand(), cancellationToken);
+                request.ToPortionCommand(currentUser.UserId), cancellationToken);
         }
         else if (request.Fraction is not null && request.WeightGrams is null)
         {
             result = await mealService.AddRecipeFractionToMealAsync(
-                request.ToFractionCommand(), cancellationToken);
+                request.ToFractionCommand(currentUser.UserId), cancellationToken);
         }
         else
         {
@@ -75,7 +77,7 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
         {
             return Ok(await mealService.UpdateMealItemWeightAsync(
                 new UpdateMealItemWeightCommand(
-                    request.UserId,
+                    currentUser.UserId,
                     request.IdempotencyKey,
                     id,
                     request.WeightGrams!.Value),
@@ -86,7 +88,7 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
         {
             return Ok(await mealService.MoveMealItemAsync(
                 new MoveMealItemCommand(
-                    request.UserId,
+                    currentUser.UserId,
                     request.IdempotencyKey,
                     id,
                     request.OccurredAt!.Value,
@@ -105,12 +107,11 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<MealOperationResult>> DeleteAsync(
         Guid id,
-        [FromQuery] Guid userId,
         [FromQuery] string idempotencyKey,
         CancellationToken cancellationToken)
     {
         return Ok(await mealService.DeleteMealItemAsync(
-            new DeleteMealItemCommand(userId, idempotencyKey, id),
+            new DeleteMealItemCommand(currentUser.UserId, idempotencyKey, id),
             cancellationToken));
     }
 
@@ -119,12 +120,11 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<IReadOnlyList<MealResult>>> GetMealsForDateAsync(
-        [FromQuery] Guid userId,
         [FromQuery] DateOnly date,
         CancellationToken cancellationToken)
     {
         return Ok(await mealService.GetMealsForDateAsync(
-            new GetMealsForDateQuery(userId, date), cancellationToken));
+            new GetMealsForDateQuery(currentUser.UserId, date), cancellationToken));
     }
 
     [HttpGet("/api/daily-summary")]
@@ -132,17 +132,15 @@ public sealed class MealsController(IMealService mealService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DailySummaryResult>> GetDailySummaryAsync(
-        [FromQuery] Guid userId,
         [FromQuery] DateOnly date,
         CancellationToken cancellationToken)
     {
         return Ok(await mealService.GetDailySummaryAsync(
-            new GetDailySummaryQuery(userId, date), cancellationToken));
+            new GetDailySummaryQuery(currentUser.UserId, date), cancellationToken));
     }
 }
 
 public sealed record AddFoodToMealRequest(
-    Guid UserId,
     string IdempotencyKey,
     Guid FoodProductId,
     decimal WeightGrams,
@@ -150,10 +148,10 @@ public sealed record AddFoodToMealRequest(
     MealType MealType,
     Guid? SourceMessageId)
 {
-    public AddFoodToMealCommand ToCommand()
+    public AddFoodToMealCommand ToCommand(Guid userId)
     {
         return new AddFoodToMealCommand(
-            UserId,
+            userId,
             IdempotencyKey,
             FoodProductId,
             WeightGrams,
@@ -164,7 +162,6 @@ public sealed record AddFoodToMealRequest(
 }
 
 public sealed record AddRecipeToMealRequest(
-    Guid UserId,
     string IdempotencyKey,
     Guid RecipeId,
     decimal? WeightGrams,
@@ -173,10 +170,10 @@ public sealed record AddRecipeToMealRequest(
     MealType MealType,
     Guid? SourceMessageId)
 {
-    public AddRecipePortionToMealCommand ToPortionCommand()
+    public AddRecipePortionToMealCommand ToPortionCommand(Guid userId)
     {
         return new AddRecipePortionToMealCommand(
-            UserId,
+            userId,
             IdempotencyKey,
             RecipeId,
             WeightGrams!.Value,
@@ -185,10 +182,10 @@ public sealed record AddRecipeToMealRequest(
             SourceMessageId);
     }
 
-    public AddRecipeFractionToMealCommand ToFractionCommand()
+    public AddRecipeFractionToMealCommand ToFractionCommand(Guid userId)
     {
         return new AddRecipeFractionToMealCommand(
-            UserId,
+            userId,
             IdempotencyKey,
             RecipeId,
             Fraction!.Value,
@@ -199,7 +196,6 @@ public sealed record AddRecipeToMealRequest(
 }
 
 public sealed record UpdateMealItemRequest(
-    Guid UserId,
     string IdempotencyKey,
     decimal? WeightGrams,
     DateTimeOffset? OccurredAt,
