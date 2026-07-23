@@ -92,6 +92,13 @@ public static class ToolJson
         return JsonSerializer.Serialize(value, SerializerOptions);
     }
 
+    public static T Deserialize<T>(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        return JsonSerializer.Deserialize<T>(json, SerializerOptions)
+            ?? throw new JsonException("The JSON value cannot be null.");
+    }
+
     public static T DeserializeArguments<T>(string json) where T : IToolArguments
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);

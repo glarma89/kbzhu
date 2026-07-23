@@ -67,11 +67,11 @@ tests/
 ```
 
 - `NutritionTracker.Domain` contains entities, value objects, invariants, enums, and deterministic nutrition calculations. It has no EF Core or ASP.NET Core dependency.
-- `NutritionTracker.Application` is the use-case orchestration layer. It currently contains only its assembly marker and must remain independent of Infrastructure and API.
+- `NutritionTracker.Application` is the use-case orchestration layer. It contains food, recipe, meal, chat, language-model abstraction, tool-contract, and agent-loop orchestration and must remain independent of Infrastructure and API.
 - `NutritionTracker.Infrastructure` contains EF Core, SQLite mappings, migrations, and dependency registration.
 - `NutritionTracker.Api` is the HTTP and composition-root layer. Controllers must remain thin and must not contain business models or nutrition arithmetic.
 - `NutritionTracker.Domain.Tests` covers domain invariants and calculations.
-- `NutritionTracker.Application.Tests` protects Application dependency direction and will contain use-case tests.
+- `NutritionTracker.Application.Tests` protects Application dependency direction and covers use-case and tool-contract behavior.
 - `NutritionTracker.IntegrationTests` exercises the API and migrations against isolated temporary SQLite databases.
 
 ## Architecture and dependency direction

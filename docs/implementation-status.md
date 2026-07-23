@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, REST endpoints, migrations, automated tests, an Application-owned strongly typed contract for future LLM tools, and a persisted user-message processing state machine. React/TypeScript frontend work, an LLM client, concrete tool handlers, and tool dispatch are not implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, and persisted user-message/tool-execution recovery. React/TypeScript frontend work and authentication are not implemented.
 
 `README.md` does not currently exist.
 
@@ -14,7 +14,7 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Current implementation stage: strongly typed LLM tools and recoverable user-message processing, included in this commit
+- Current implementation stage: OpenAI Responses API chat integration and allowlisted tool execution, included in the current implementation-stage commit
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -79,7 +79,17 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Kept completed tool results available for final-response recovery without re-executing the tool.
    - Added migration `20260723143351_AddUserMessageProcessing` and transition, scenario, recovery, and persistence tests.
 
-No frontend, OpenAI client, model invocation, or tool dispatch has been completed.
+11. **OpenAI Responses API chat integration** - included in the current implementation-stage commit
+   - Added Application-owned `ILanguageModelClient`, provider-neutral response/tool-call contracts, and a bounded multi-turn agent loop.
+   - Added `POST /api/chat/messages` with duplicate-delivery recovery, executed-action reporting, clarification/confirmation fields, and authoritative daily summaries.
+   - Added an OpenAI Responses API HTTP adapter with per-request and whole-loop timeouts, cancellation, bounded exponential retry for rate limits and transient failures, and `previous_response_id` continuation.
+   - Registers all 15 allowlisted tools with strict JSON schemas transformed to the OpenAI strict subset while retaining backend typed validation and mutually exclusive-mode validation.
+   - Added concrete allowlisted dispatch to existing food, recipe, and meal Application services; the model cannot select arbitrary methods or SQL.
+   - Added transactional `ToolExecution` persistence keyed by `(UserId, IdempotencyKey)` with tool name, argument hash, and structured result, preventing mutation replay after ambiguous network failures.
+   - Added fake-language-model integration tests for sequential calls, duplicate delivery, authoritative calorie output, strict schemas, and the maximum agent-loop limit.
+   - The official `OpenAI` .NET package 2.12.0 was evaluated, but its Responses surface emits `OPENAI001` evaluation diagnostics. Because warnings are errors and repository policy forbids suppressions, the integration uses the documented Responses HTTP API behind `ILanguageModelClient` instead.
+
+No frontend or authentication has been completed. Automated tests never invoke OpenAI.
 
 ## Current architecture
 
@@ -95,8 +105,8 @@ NutritionTracker.Api             -> NutritionTracker.Application + NutritionTrac
 Current responsibilities:
 
 - `NutritionTracker.Domain`: entities, value objects, invariants, enums, and deterministic nutrition calculations.
-- `NutritionTracker.Application`: food-product, recipe, and meal-journal commands, queries, results, validation, orchestration services, repository abstractions, Application exceptions, provider-independent LLM tool contracts, and user-message processing coordination.
-- `NutritionTracker.Infrastructure`: EF Core SQLite persistence, entity configurations, migrations, and DI registration.
+- `NutritionTracker.Application`: food-product, recipe, meal-journal, and chat commands, queries, results, validation, orchestration services, repository abstractions, Application exceptions, provider-independent LLM/tool contracts, and the bounded agent loop.
+- `NutritionTracker.Infrastructure`: EF Core SQLite persistence, allowlisted tool dispatch, the OpenAI Responses HTTP adapter, entity configurations, migrations, and DI registration.
 - `NutritionTracker.Api`: composition root, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
 - `NutritionTracker.Domain.Tests`: domain invariant and nutrition calculation tests.
 - `NutritionTracker.Application.Tests`: dependency-direction and food/recipe use-case tests.
@@ -165,6 +175,8 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Duplicate message deliveries are identified by a client delivery key rather than message text
 - Stable per-message mutation idempotency keys survive retries and lost tool responses
 - Completed structured tool results remain pending until the assistant response is marked delivered
+- Provider-independent `ILanguageModelClient` with sequential tool-call continuation
+- Bounded agent iterations, whole-loop cancellation/timeout, and persisted duplicate-delivery responses
 
 ### Future LLM tool contract
 
@@ -177,7 +189,9 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Search results expose `requires_selection` so multiple food or recipe matches are not automatically selected
 - Backend-supplied confirmation evidence is bound to the tool name and canonical argument hash
 - Mutating tool definitions require a backend-supplied idempotency key; read tools are explicitly non-mutating
-- Provider-independent handler interfaces exist, but concrete adapters and handlers are not yet implemented
+- Provider-independent typed handler interfaces remain available; the concrete executor uses one explicit allowlisted dispatcher over existing Application services
+- Concrete dispatch is restricted to the 15 registered definitions and validates every model argument again before invoking an Application service
+- Strict model schemas require every property and represent optional values as nullable, while backend validation enforces richer invariants such as mutually exclusive quantity modes
 
 ### Nutrition calculations
 
@@ -214,9 +228,10 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - `DELETE /api/meals/items/{id}`
 - `GET /api/meals`
 - `GET /api/daily-summary`
+- `POST /api/chat/messages`
 - Application validation and not-found failures returned as `ProblemDetails`
 
-No nutrition-target mutation, chat, or LLM API endpoints exist yet. The tool contract is not exposed through an HTTP or model-provider endpoint.
+No nutrition-target mutation endpoint exists. Chat uses the tool contract through the OpenAI Responses API adapter or a test fake.
 
 ## Database status
 
@@ -237,6 +252,7 @@ Configured indexes include:
 - Unique `ProcessedCommand (UserId, IdempotencyKey)`
 - Unique `UserMessageProcessing (UserId, DeliveryKey)`
 - Unique filtered `UserMessageProcessing (UserId, IdempotencyKey)` for prepared mutations
+- Unique `ToolExecution (UserId, IdempotencyKey)` for committed model-initiated mutations
 
 Delete behavior is explicit. Aggregate children (`RecipeIngredient`, `MealItem`) cascade from their parent aggregate, while food/recipe references are restricted and `MealItem.SourceMessageId` uses `SetNull`.
 
@@ -255,8 +271,9 @@ Recipe versioning uses:
 - Recipe history migration: `20260723121438_AddRecipeVersionHistory`
 - Meal journal migration: `20260723133852_AddMealJournal`
 - User-message processing migration: `20260723143351_AddUserMessageProcessing`
+- Chat tool-execution migration: `20260723151937_AddChatToolExecution`
 - Model snapshot: `NutritionDbContextModelSnapshot`
-- All migrations apply successfully to isolated temporary SQLite databases.
+- All five migrations apply successfully to isolated temporary SQLite databases.
 - The meal-journal migration preserves and converts legacy `OccurredAt` offset timestamps to UTC Unix milliseconds.
 - The latest calculator commit did not change persistence entities or mappings.
 - The recipe migration backfills legacy recipe/version data and product nutrition snapshots before adding the MealItem-to-version FK.
@@ -264,6 +281,18 @@ Recipe versioning uses:
 - The message-processing migration adds a one-to-one workflow row for each processed user `ChatMessage`, state-dependent check constraints, and duplicate-delivery/idempotency indexes.
 
 ## Verification status
+
+Implementation-stage verification on 2026-07-23 for OpenAI chat integration:
+
+- `dotnet restore NutritionTracker.sln`: passed
+- `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 106/106 tests
+  - Domain tests: 43 passed
+  - Application tests: 41 passed
+  - Integration tests: 22 passed
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- `dotnet-ef migrations has-pending-model-changes`: passed; no model changes were reported
+- Integration tests use `FakeLanguageModelClient`; no real OpenAI request was made
 
 Implementation-stage verification on 2026-07-23 for the tool-contract and user-message-processing changes:
 
@@ -297,12 +326,10 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 ## Known issues and incomplete areas
 
 - `README.md` does not exist.
-- Application use cases currently cover food products, recipes, and meal journaling with daily summaries.
-- There are no nutrition-target mutation or chat API endpoints.
-- Authentication and user authorization are not implemented.
-- LLM client integration, concrete tool handlers, and tool dispatch are not implemented.
-- Tool schemas and ambiguity-result contracts exist, but no model provider consumes them yet.
-- The message coordinator is intentionally not registered in the composition root until concrete interpreter and tool-executor adapters exist; this avoids an invalid partial DI graph.
+- Application use cases cover food products, recipes, meal journaling, daily summaries, and chat agent-loop orchestration.
+- There is no nutrition-target mutation endpoint.
+- Authentication, authorization, and trusted identity propagation remain incomplete; `userId` is still accepted by the HTTP request.
+- A confirmation-required tool returns `pendingConfirmation`; a dedicated confirmation HTTP continuation is not yet exposed.
 - React/TypeScript/Vite frontend is not present.
 - There is no external or seeded food-product catalog.
 - PostgreSQL support has not been implemented; only portability has been considered in architecture and mappings.
@@ -310,18 +337,18 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-Implement persisted user-message processing and recovery without connecting the OpenAI API.
+Connect chat-message processing to the OpenAI Responses API through allowlisted tool calling.
 
 Status: implementation is complete, verified, and included in the current implementation-stage commit.
 
 ## Next task
 
-Wait for the next explicitly authorized stage. A future stage may implement concrete handlers and allowlisted dispatch without granting the model direct persistence access.
+After commit authorization, a future stage may add authentication/trusted identity propagation and an explicit confirmation continuation endpoint.
 
 ## Previous verified baseline commit
 
 ```text
-c09e5a6 feat(meals): add time-zone-aware meal journal and daily summaries
+c6e1834 feat(chat): add recoverable LLM tool workflow
 ```
 
-This was the latest committed and verified implementation stage before the current tool-contract and message-processing commit.
+This was the latest committed and verified implementation stage before the current OpenAI chat-integration commit.

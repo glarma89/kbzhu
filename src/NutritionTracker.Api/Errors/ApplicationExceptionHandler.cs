@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using NutritionTracker.Application.Common;
+using NutritionTracker.Application.Chat;
 
 namespace NutritionTracker.Api.Errors;
 
@@ -32,6 +33,13 @@ internal sealed class ApplicationExceptionHandler : IExceptionHandler
                 Status = StatusCodes.Status409Conflict,
                 Title = "Request conflict",
                 Detail = conflictException.Message,
+                Instance = httpContext.Request.Path
+            },
+            LanguageModelUnavailableException unavailableException => new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Language model unavailable",
+                Detail = unavailableException.Message,
                 Instance = httpContext.Request.Path
             },
             _ => null

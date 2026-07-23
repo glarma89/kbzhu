@@ -26,8 +26,8 @@ public sealed class NutritionDbContextTests
         var appliedMigrations = await context.Database.GetAppliedMigrationsAsync(cancellation.Token);
 
         Assert.True(canConnect);
-        Assert.Equal(4, appliedMigrations.Count());
-        Assert.EndsWith("AddUserMessageProcessing", appliedMigrations.Last(), StringComparison.Ordinal);
+        Assert.Equal(5, appliedMigrations.Count());
+        Assert.EndsWith("AddChatToolExecution", appliedMigrations.Last(), StringComparison.Ordinal);
     }
 
     [Fact]

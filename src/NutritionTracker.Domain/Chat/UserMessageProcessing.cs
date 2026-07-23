@@ -75,7 +75,7 @@ public sealed class UserMessageProcessing
         string question,
         DateTimeOffset changedAtUtc)
     {
-        EnsureState(MessageProcessingState.Interpreting);
+        EnsureOneOf(MessageProcessingState.Interpreting, MessageProcessingState.Executing);
         InterpretationJson = DomainGuard.RequiredText(interpretationJson, nameof(interpretationJson));
         PendingQuestion = DomainGuard.RequiredText(question, nameof(question));
         SetState(MessageProcessingState.AwaitingClarification, changedAtUtc);
@@ -97,7 +97,7 @@ public sealed class UserMessageProcessing
         string question,
         DateTimeOffset changedAtUtc)
     {
-        EnsureState(MessageProcessingState.Interpreting);
+        EnsureOneOf(MessageProcessingState.Interpreting, MessageProcessingState.Executing);
         SetPreparedOperation(interpretationJson, toolName, toolArgumentsJson, idempotencyKey);
         PendingQuestion = DomainGuard.RequiredText(question, nameof(question));
         SetState(MessageProcessingState.AwaitingConfirmation, changedAtUtc);
@@ -126,6 +126,13 @@ public sealed class UserMessageProcessing
     public void CompleteExecution(string executionResultJson, DateTimeOffset changedAtUtc)
     {
         EnsureState(MessageProcessingState.Executing);
+        ExecutionResultJson = DomainGuard.RequiredText(executionResultJson, nameof(executionResultJson));
+        Complete(changedAtUtc);
+    }
+
+    public void CompleteInterpretation(string executionResultJson, DateTimeOffset changedAtUtc)
+    {
+        EnsureState(MessageProcessingState.Interpreting);
         ExecutionResultJson = DomainGuard.RequiredText(executionResultJson, nameof(executionResultJson));
         Complete(changedAtUtc);
     }
@@ -240,6 +247,15 @@ public sealed class UserMessageProcessing
         if (State != required)
         {
             throw new InvalidOperationException($"Expected state {required}, but the message is {State}.");
+        }
+    }
+
+    private void EnsureOneOf(MessageProcessingState first, MessageProcessingState second)
+    {
+        if (State != first && State != second)
+        {
+            throw new InvalidOperationException(
+                $"Expected state {first} or {second}, but the message is {State}.");
         }
     }
 }

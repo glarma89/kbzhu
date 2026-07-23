@@ -23,6 +23,7 @@ public sealed class NutritionDbContext(DbContextOptions<NutritionDbContext> opti
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<UserMessageProcessing> UserMessageProcessings => Set<UserMessageProcessing>();
     public DbSet<ProcessedCommand> ProcessedCommands => Set<ProcessedCommand>();
+    public DbSet<ToolExecution> ToolExecutions => Set<ToolExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -1,0 +1,221 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NutritionTracker.Api.Controllers;
+using NutritionTracker.Application.Chat;
+using NutritionTracker.Domain.Foods;
+using NutritionTracker.Domain.Nutrition;
+using NutritionTracker.Domain.Users;
+using NutritionTracker.Infrastructure.Persistence;
+using NutritionTracker.IntegrationTests.Fakes;
+
+namespace NutritionTracker.IntegrationTests;
+
+public sealed class ChatEndpointTests
+{
+    private static readonly DateTimeOffset UtcNow = new(2026, 7, 23, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task ExecutesSequentialToolsAndReturnsBackendDailySummary()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);
+        var food = new FoodProduct(
+            Guid.NewGuid(),
+            null,
+            "Apple",
+            null,
+            new NutritionValues(200m, 20m, 10m, 30m),
+            null,
+            "Test",
+            true,
+            UtcNow,
+            UtcNow);
+        var fake = new FakeLanguageModelClient(
+        [
+            new LanguageModelResponse(
+                "response-1",
+                null,
+                [new LanguageModelToolCall(
+                    "call-search",
+                    "search_foods",
+                    "{\"query\":\"apple\",\"limit\":10}")]),
+            new LanguageModelResponse(
+                "response-2",
+                null,
+                [new LanguageModelToolCall(
+                    "call-add",
+                    "add_food_to_diary",
+                    "{\"food_product_id\":\"" + food.Id +
+                    "\",\"weight_grams\":100,\"occurred_at\":\"2026-07-23T12:00:00Z\"," +
+                    "\"meal_type\":\"lunch\",\"user_intent\":\"log the apple\"}")]),
+            new LanguageModelResponse("response-3", "Всего 9999 ккал.", [])
+        ]);
+        using var factory = CreateFactory(fake);
+        await factory.SeedAsync(user, food);
+        using var client = factory.CreateClient();
+        var request = new ChatMessageRequest(
+            user.Id,
+            "Добавь 100 г яблока на обед",
+            "client-message-1",
+            UtcNow);
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/chat/messages", request, CancellationToken.None);
+        var result = await response.Content.ReadFromJsonAsync<ChatMessageResult>(CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(result);
+        Assert.Collection(
+            result.ExecutedActions,
+            action => Assert.Equal("search_foods", action.ToolName),
+            action => Assert.Equal("add_food_to_diary", action.ToolName));
+        Assert.Equal(200m, result.DailySummary?.Consumed.Calories);
+        Assert.Contains("200", result.AssistantMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("9999", result.AssistantMessage, StringComparison.Ordinal);
+        Assert.Null(result.PendingClarification);
+        Assert.Null(result.PendingConfirmation);
+
+        Assert.Equal(3, fake.Requests.Count);
+        Assert.All(fake.Requests[0].Tools, tool => Assert.True(tool.Strict));
+        Assert.Equal(15, fake.Requests[0].Tools.Count);
+        Assert.All(fake.Requests[0].Tools, AssertStrictSchema);
+        Assert.Equal(request.Message, fake.Requests[0].UserMessage);
+        Assert.Null(fake.Requests[1].UserMessage);
+        Assert.Equal("response-1", fake.Requests[1].PreviousResponseId);
+        Assert.Single(fake.Requests[1].ToolOutputs);
+        Assert.Equal("response-2", fake.Requests[2].PreviousResponseId);
+
+        using var repeatedResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages", request, CancellationToken.None);
+        var repeated = await repeatedResponse.Content.ReadFromJsonAsync<ChatMessageResult>(
+            CancellationToken.None);
+        Assert.Equal(HttpStatusCode.OK, repeatedResponse.StatusCode);
+        Assert.Equal(result.AssistantMessage, repeated?.AssistantMessage);
+        Assert.Equal(result.DailySummary?.Consumed, repeated?.DailySummary?.Consumed);
+        Assert.Equal(
+            result.ExecutedActions.Select(action => action.ToolName),
+            repeated?.ExecutedActions.Select(action => action.ToolName));
+        Assert.Equal(3, fake.Requests.Count);
+
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<NutritionDbContext>();
+        Assert.Equal(1, await context.ChatMessages.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await context.MealItems.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await context.ToolExecutions.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await context.ProcessedCommands.CountAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StopsAtConfiguredAgentIterationLimitWithoutCallingOpenAi()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);
+        var toolCall = new LanguageModelToolCall(
+            "call-summary",
+            "get_daily_summary",
+            "{\"date\":\"2026-07-23\"}");
+        var fake = new FakeLanguageModelClient(
+        [
+            new LanguageModelResponse("response-1", null, [toolCall]),
+            new LanguageModelResponse("response-2", null, [toolCall with { CallId = "call-summary-2" }])
+        ]);
+        using var factory = CreateFactory(fake, maximumIterations: 2);
+        await factory.SeedAsync(user);
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/api/chat/messages",
+            new ChatMessageRequest(user.Id, "Покажи итог", "client-message-limit", UtcNow),
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(2, fake.Requests.Count);
+    }
+
+    [Fact]
+    public async Task DoesNotRepeatMutationAfterAmbiguousLanguageModelFailure()
+    {
+        var user = new UserProfile(Guid.NewGuid(), "Chat user", "UTC", UtcNow);
+        var food = new FoodProduct(
+            Guid.NewGuid(),
+            null,
+            "Apple",
+            null,
+            new NutritionValues(100m, 1m, 0m, 25m),
+            null,
+            "Test",
+            true,
+            UtcNow,
+            UtcNow);
+        var fake = new FakeLanguageModelClient(
+        [
+            new LanguageModelResponse(
+                "response-1",
+                null,
+                [new LanguageModelToolCall(
+                    "call-add",
+                    "add_food_to_diary",
+                    "{\"food_product_id\":\"" + food.Id +
+                    "\",\"weight_grams\":100,\"occurred_at\":\"2026-07-23T12:00:00Z\"," +
+                    "\"meal_type\":\"lunch\",\"user_intent\":\"log the apple\"}")])
+        ])
+        {
+            ExceptionWhenResponsesExhausted = new LanguageModelUnavailableException(
+                "Simulated ambiguous network failure.")
+        };
+        using var factory = CreateFactory(fake);
+        await factory.SeedAsync(user, food);
+        using var client = factory.CreateClient();
+        var request = new ChatMessageRequest(
+            user.Id, "Добавь яблоко", "client-message-ambiguous", UtcNow);
+
+        using var failedResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages", request, CancellationToken.None);
+        using var repeatedResponse = await client.PostAsJsonAsync(
+            "/api/chat/messages", request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, failedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, repeatedResponse.StatusCode);
+        Assert.Equal(2, fake.Requests.Count);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<NutritionDbContext>();
+        Assert.Equal(1, await context.MealItems.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await context.ToolExecutions.CountAsync(CancellationToken.None));
+        Assert.Equal(1, await context.ProcessedCommands.CountAsync(CancellationToken.None));
+    }
+
+    private static FoodApiWebApplicationFactory CreateFactory(
+        FakeLanguageModelClient fake,
+        int maximumIterations = 8)
+    {
+        return new FoodApiWebApplicationFactory(services =>
+        {
+            services.RemoveAll<ILanguageModelClient>();
+            services.AddSingleton<ILanguageModelClient>(fake);
+            services.RemoveAll<ChatAgentSettings>();
+            services.AddSingleton(new ChatAgentSettings(
+                maximumIterations, TimeSpan.FromSeconds(30)));
+        });
+    }
+
+    private static void AssertStrictSchema(LanguageModelToolDefinition tool)
+    {
+        var schema = tool.ParametersJsonSchema;
+        Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+        Assert.False(schema.TryGetProperty("$schema", out _));
+        Assert.False(schema.TryGetProperty("oneOf", out _));
+        Assert.False(schema.TryGetProperty("not", out _));
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        var propertyNames = schema.GetProperty("properties")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .Order(StringComparer.Ordinal);
+        var requiredNames = schema.GetProperty("required")
+            .EnumerateArray()
+            .Select(item => item.GetString()!)
+            .Order(StringComparer.Ordinal);
+        Assert.Equal(propertyNames, requiredNames);
+    }
+}
