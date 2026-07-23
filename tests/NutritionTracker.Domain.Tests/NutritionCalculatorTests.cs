@@ -161,12 +161,13 @@ public sealed class NutritionCalculatorTests
             "Potato salad",
             null,
             preparedWeightGrams,
-            1,
-            false,
-            UtcNow,
+            [
+                new RecipeIngredientDefinition(Guid.NewGuid(), potato.Id, 250m, potato.NutritionPer100g),
+                new RecipeIngredientDefinition(Guid.NewGuid(), yogurt.Id, 50m, yogurt.NutritionPer100g)
+            ],
+            "Initial",
+            "Unit test",
             UtcNow);
-        recipe.AddIngredient(Guid.NewGuid(), potato.Id, 250m, UtcNow);
-        recipe.AddIngredient(Guid.NewGuid(), yogurt.Id, 50m, UtcNow);
 
         IReadOnlyDictionary<Guid, FoodProduct> products = new Dictionary<Guid, FoodProduct>
         {

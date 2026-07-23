@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using NutritionTracker.Infrastructure.Persistence;
 
 namespace NutritionTracker.IntegrationTests.Persistence;
@@ -17,6 +19,13 @@ internal sealed class SqliteTestDatabase : IAsyncDisposable
 
     public static async Task<SqliteTestDatabase> CreateAsync(CancellationToken cancellationToken)
     {
+        return await CreateAtMigrationAsync(null, cancellationToken);
+    }
+
+    public static async Task<SqliteTestDatabase> CreateAtMigrationAsync(
+        string? targetMigration,
+        CancellationToken cancellationToken)
+    {
         var databasePath = Path.Combine(
             Path.GetTempPath(),
             $"nutrition-tracker-tests-{Guid.NewGuid():N}.db");
@@ -26,7 +35,8 @@ internal sealed class SqliteTestDatabase : IAsyncDisposable
         var database = new SqliteTestDatabase(databasePath, options);
 
         await using var context = database.CreateContext();
-        await context.Database.MigrateAsync(cancellationToken);
+        var migrator = context.GetService<IMigrator>();
+        await migrator.MigrateAsync(targetMigration, cancellationToken);
         return database;
     }
 

@@ -28,24 +28,27 @@ internal static class DomainTestData
             UtcNow);
     }
 
-    public static Recipe CreateRecipe(bool addIngredient)
+    public static Recipe CreateRecipe(bool addIngredient = true)
     {
-        var recipe = new Recipe(
+        var ingredients = addIngredient
+            ? new[]
+            {
+                new RecipeIngredientDefinition(
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    100m,
+                    CreateNutritionValues())
+            }
+            : [];
+        return new Recipe(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "Salad",
             null,
             500m,
-            3,
-            false,
-            UtcNow,
+            ingredients,
+            "Initial recipe",
+            "Unit test",
             UtcNow);
-
-        if (addIngredient)
-        {
-            recipe.AddIngredient(Guid.NewGuid(), Guid.NewGuid(), 100m, UtcNow);
-        }
-
-        return recipe;
     }
 }

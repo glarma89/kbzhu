@@ -11,13 +11,17 @@ internal sealed class RecipeConfiguration : IEntityTypeConfiguration<Recipe>
     {
         builder.ToTable("Recipes");
         builder.HasKey(recipe => recipe.Id);
-        builder.HasIndex(recipe => new { recipe.UserId, recipe.Name });
+        builder.HasIndex(recipe => new { recipe.UserId, recipe.NormalizedName });
         builder.Property(recipe => recipe.Name).IsRequired();
+        builder.Property(recipe => recipe.NormalizedName).IsRequired();
         builder.Property(recipe => recipe.Description);
         builder.Property(recipe => recipe.TotalPreparedWeightGrams)
             .HasPrecision(PersistenceConstants.NumericPrecision, PersistenceConstants.WeightScale);
         builder.Property(recipe => recipe.Version).IsRequired();
         builder.Property(recipe => recipe.IsArchived).IsRequired();
+        builder.Property(recipe => recipe.ArchivedAtUtc);
+        builder.Property(recipe => recipe.ArchiveReason);
+        builder.Property(recipe => recipe.ArchiveSource);
         builder.Property(recipe => recipe.CreatedAtUtc).IsRequired();
         builder.Property(recipe => recipe.UpdatedAtUtc).IsRequired();
 

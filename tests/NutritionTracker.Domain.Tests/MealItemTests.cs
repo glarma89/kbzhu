@@ -37,9 +37,10 @@ public sealed class MealItemTests
     }
 
     [Fact]
-    public void ConstructorRejectsEmptyRecipe()
+    public void ConstructorRejectsArchivedRecipe()
     {
-        var recipe = DomainTestData.CreateRecipe(addIngredient: false);
+        var recipe = DomainTestData.CreateRecipe();
+        recipe.Archive("Archived", "Unit test", DomainTestData.UtcNow.AddMinutes(1));
 
         Assert.Throws<InvalidOperationException>(
             () => new MealItem(

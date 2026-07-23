@@ -54,6 +54,32 @@ public static class NutritionCalculator
         return new NutritionValues(calories, proteinGrams, fatGrams, carbohydrateGrams);
     }
 
+    public static NutritionValues CalculateRecipe(RecipeVersion recipeVersion)
+    {
+        ArgumentNullException.ThrowIfNull(recipeVersion);
+        if (recipeVersion.Ingredients.Count == 0)
+        {
+            throw new InvalidOperationException("A recipe version must contain at least one ingredient.");
+        }
+
+        var calories = 0m;
+        var proteinGrams = 0m;
+        var fatGrams = 0m;
+        var carbohydrateGrams = 0m;
+
+        foreach (var ingredient in recipeVersion.Ingredients)
+        {
+            var values = ingredient.NutritionPer100gSnapshot;
+            var weight = ingredient.WeightGrams;
+            calories += values.Calories * weight / 100m;
+            proteinGrams += values.ProteinGrams * weight / 100m;
+            fatGrams += values.FatGrams * weight / 100m;
+            carbohydrateGrams += values.CarbohydrateGrams * weight / 100m;
+        }
+
+        return new NutritionValues(calories, proteinGrams, fatGrams, carbohydrateGrams);
+    }
+
     public static NutritionValues CalculateRecipePer100Grams(
         Recipe recipe,
         IReadOnlyDictionary<Guid, FoodProduct> products)
@@ -76,6 +102,24 @@ public static class NutritionCalculator
         var validatedConsumedWeight = DomainGuard.Positive(consumedWeightGrams, nameof(consumedWeightGrams));
         var preparedWeight = GetPreparedWeight(recipe);
         var total = CalculateRecipe(recipe, products);
+
+        return new NutritionValues(
+            total.Calories * validatedConsumedWeight / preparedWeight,
+            total.ProteinGrams * validatedConsumedWeight / preparedWeight,
+            total.FatGrams * validatedConsumedWeight / preparedWeight,
+            total.CarbohydrateGrams * validatedConsumedWeight / preparedWeight);
+    }
+
+    public static NutritionValues CalculateRecipePortion(
+        RecipeVersion recipeVersion,
+        decimal consumedWeightGrams)
+    {
+        ArgumentNullException.ThrowIfNull(recipeVersion);
+        var validatedConsumedWeight = DomainGuard.Positive(consumedWeightGrams, nameof(consumedWeightGrams));
+        var preparedWeight = recipeVersion.TotalPreparedWeightGrams
+            ?? throw new InvalidOperationException(
+                "Total prepared recipe weight is required for gram-based calculations.");
+        var total = CalculateRecipe(recipeVersion);
 
         return new NutritionValues(
             total.Calories * validatedConsumedWeight / preparedWeight,

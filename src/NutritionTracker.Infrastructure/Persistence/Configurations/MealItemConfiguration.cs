@@ -41,6 +41,9 @@ internal sealed class MealItemConfiguration : IEntityTypeConfiguration<MealItem>
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Recipe>().WithMany().HasForeignKey(item => item.RecipeId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<RecipeVersion>().WithMany()
+            .HasForeignKey(item => new { item.RecipeId, item.RecipeVersion })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<ChatMessage>().WithMany().HasForeignKey(item => item.SourceMessageId)
             .OnDelete(DeleteBehavior.SetNull);
     }

@@ -27,6 +27,13 @@ internal sealed class ApplicationExceptionHandler : IExceptionHandler
                 Detail = notFoundException.Message,
                 Instance = httpContext.Request.Path
             },
+            ApplicationConflictException conflictException => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Request conflict",
+                Detail = conflictException.Message,
+                Instance = httpContext.Request.Path
+            },
             _ => null
         };
 

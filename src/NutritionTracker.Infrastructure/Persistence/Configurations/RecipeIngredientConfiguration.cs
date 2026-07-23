@@ -11,6 +11,7 @@ internal sealed class RecipeIngredientConfiguration : IEntityTypeConfiguration<R
     {
         builder.ToTable("RecipeIngredients");
         builder.HasKey(ingredient => ingredient.Id);
+        builder.Property(ingredient => ingredient.Id).ValueGeneratedNever();
         builder.Property(ingredient => ingredient.WeightGrams)
             .HasPrecision(PersistenceConstants.NumericPrecision, PersistenceConstants.WeightScale).IsRequired();
         builder.HasOne<FoodProduct>().WithMany().HasForeignKey(ingredient => ingredient.FoodProductId)

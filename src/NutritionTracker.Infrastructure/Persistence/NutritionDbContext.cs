@@ -16,6 +16,8 @@ public sealed class NutritionDbContext(DbContextOptions<NutritionDbContext> opti
     public DbSet<FoodProduct> FoodProducts => Set<FoodProduct>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
+    public DbSet<RecipeVersion> RecipeVersions => Set<RecipeVersion>();
+    public DbSet<RecipeVersionIngredient> RecipeVersionIngredients => Set<RecipeVersionIngredient>();
     public DbSet<Meal> Meals => Set<Meal>();
     public DbSet<MealItem> MealItems => Set<MealItem>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
