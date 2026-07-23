@@ -6,7 +6,7 @@ Last updated: 2026-07-23
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, and explicit chat confirmation/cancellation continuation. React/TypeScript frontend work and a concrete production identity provider are not implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, explicit chat confirmation/cancellation continuation, and a canonical Russian assistant system instruction. React/TypeScript frontend work and a concrete production identity provider are not implemented.
 
 `README.md` does not currently exist.
 
@@ -14,7 +14,8 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Current implementation stage: trusted authenticated identity, explicit chat confirmation continuation, and the Russian assistant instruction, included in the current implementation-stage commit
+- Current commit: `9722992` (`feat(chat): secure authenticated assistant workflows`)
+- Current implementation stage: trusted authenticated identity, explicit chat confirmation continuation, and the Russian assistant instruction; committed and verified
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -62,7 +63,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added user-time-zone daily boundaries, snapshot-based totals, effective daily targets, and negative remaining values for over-target days.
    - Added migration-backed UTC-millisecond meal occurrence storage and processed-command result metadata for replay responses.
 
-9. **Strongly typed LLM tool contract** - included in the current implementation-stage commit
+9. **Strongly typed LLM tool contract** - commit `c6e1834` (`feat(chat): add recoverable LLM tool workflow`)
    - Added an allowlisted catalog for 15 food, recipe, diary, summary, recent-meal, and target tools.
    - Added typed argument and structured-result DTOs plus one typed handler interface per tool.
    - Added Draft 2020-12 JSON schemas with required fields, strict unknown-field rejection, ranges, enums, and mutually exclusive quantity/update modes.
@@ -70,7 +71,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Required explicit confirmation for food updates, recipe updates, historical diary changes, and diary deletion.
    - Added serialization and JSON validation tests without adding an OpenAI dependency or concrete tool dispatch.
 
-10. **Persisted user-message processing state machine** - included in the current implementation-stage commit
+10. **Persisted user-message processing state machine** - commit `c6e1834` (`feat(chat): add recoverable LLM tool workflow`)
    - Added `Received`, `Interpreting`, `AwaitingClarification`, `AwaitingConfirmation`, `Executing`, `Completed`, and `Failed` states with guarded domain transitions.
    - Added a provider-independent coordinator that separates interpretation from tool execution and validates interpreted arguments against the allowlisted tool contract.
    - Persisted the original `ChatMessage`, interpretation snapshot, clarification/confirmation state, prepared tool call, idempotency key, execution result, failure/retry state, and response-delivery marker.
@@ -79,7 +80,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Kept completed tool results available for final-response recovery without re-executing the tool.
    - Added migration `20260723143351_AddUserMessageProcessing` and transition, scenario, recovery, and persistence tests.
 
-11. **OpenAI Responses API chat integration** - included in the current implementation-stage commit
+11. **OpenAI Responses API chat integration** - commit `6f57745` (`feat(chat): integrate OpenAI tool-calling agent loop`)
    - Added Application-owned `ILanguageModelClient`, provider-neutral response/tool-call contracts, and a bounded multi-turn agent loop.
    - Added `POST /api/chat/messages` with duplicate-delivery recovery, executed-action reporting, clarification/confirmation fields, and authoritative daily summaries.
    - Added an OpenAI Responses API HTTP adapter with per-request and whole-loop timeouts, cancellation, bounded exponential retry for rate limits and transient failures, and `previous_response_id` continuation.
@@ -89,7 +90,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added fake-language-model integration tests for sequential calls, duplicate delivery, authoritative calorie output, strict schemas, and the maximum agent-loop limit.
    - The official `OpenAI` .NET package 2.12.0 was evaluated, but its Responses surface emits `OPENAI001` evaluation diagnostics. Because warnings are errors and repository policy forbids suppressions, the integration uses the documented Responses HTTP API behind `ILanguageModelClient` instead.
 
-12. **Trusted identity and chat confirmation continuation** - included in the current implementation-stage commit
+12. **Trusted identity and chat confirmation continuation** - commit `9722992` (`feat(chat): secure authenticated assistant workflows`)
    - Added an Application-owned current-user contract and a framework-neutral `sub` claim contract, resolved from validated claims only in the API layer.
    - Protected food, recipe, meal, and chat endpoints and removed caller-supplied `userId` values from request bodies and query strings.
    - Added an unconfigured production authentication scheme that rejects protected requests until a real provider is registered, plus a test-only authentication handler for migration-backed HTTP tests.
@@ -99,7 +100,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Repeated confirmation and cancellation deliveries replay the persisted terminal response without executing a mutation twice.
    - Added migration `20260723161419_AddChatConfirmationHash`, focused Application tests, and authenticated migration-backed HTTP tests. Automated tests continue to use `FakeLanguageModelClient` only.
 
-13. **Russian AI-assistant system instruction** - included in the current implementation-stage commit
+13. **Russian AI-assistant system instruction** - commit `9722992` (`feat(chat): secure authenticated assistant workflows`)
    - Replaced the short inline agent instruction with an Application-owned canonical instruction used by every language-model request.
    - Requires Russian natural-language understanding, tool-authoritative mutation status and nutrition values, candidate selection, minimal clarification, intent separation, one-off recipe handling, confirmation gates, user-time-zone handling, and concise backend-derived summaries.
    - Explicitly resists prompt injection, arbitrary SQL/database access, tool-policy bypass, secret disclosure, invented identifiers, and invented nutrition data.
@@ -382,18 +383,16 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-Create and integrate the Russian Nutrition Tracker AI-assistant system instruction with positive and negative behavioral dialogues.
-
-Status: implementation and verification are complete and included in the current implementation-stage commit.
+No implementation task is currently active. The latest authenticated-assistant workflow stage is committed and verified.
 
 ## Next task
 
-After commit authorization, a future stage may add automated multi-turn prompt-behavior evaluations, integrate a concrete production identity provider, or add nutrition-target mutation workflows.
+At the next authorized stage, future work may add automated multi-turn prompt-behavior evaluations, integrate a concrete production identity provider, or add nutrition-target mutation workflows.
 
-## Previous verified baseline commit
+## Latest verified commit
 
 ```text
-6f57745 feat(chat): integrate OpenAI tool-calling agent loop
+9722992 feat(chat): secure authenticated assistant workflows
 ```
 
-This was the latest committed and verified implementation stage before the current authenticated-assistant workflow commit.
+This commit includes trusted identity propagation, explicit confirmation/cancellation continuation, the confirmation-hash migration, the Russian system instruction, documentation, and the 113-test verified suite.
