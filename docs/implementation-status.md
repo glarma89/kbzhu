@@ -14,7 +14,7 @@ The repository currently contains the .NET backend foundation, domain model, det
 
 - Branch: `main`
 - Upstream: `origin/main`
-- Latest local implementation commit: `238221e`
+- Latest local implementation commit: `c09e5a6`
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -56,7 +56,7 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added create, get, search, update, archive, total-nutrition, and portion-calculation use cases and REST endpoints.
    - Added a migration that backfills existing recipes and version ingredients before enforcing version foreign keys.
 
-8. **Meal journal Application layer and REST API** - current uncommitted stage
+8. **Meal journal Application layer and REST API** - commit `c09e5a6` (`feat(meals): add time-zone-aware meal journal and daily summaries`)
    - Added idempotent food, recipe-portion, and recipe-fraction logging operations.
    - Added meal-item weight updates, moves, and deletion with current daily summaries in every mutation response.
    - Added user-time-zone daily boundaries, snapshot-based totals, effective daily targets, and negative remaining values for over-target days.
@@ -224,7 +224,7 @@ Recipe versioning uses:
 
 ## Verification status
 
-Latest recorded verification on 2026-07-23 for the meal-journal working tree:
+Latest recorded verification on 2026-07-23 for commit `c09e5a6`:
 
 - `dotnet tool restore`: passed
 - `dotnet restore NutritionTracker.sln`: passed
@@ -252,18 +252,18 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 
 ## Current task
 
-Implement the meal journal Application layer, REST endpoints, time-zone-aware daily summaries, snapshot totals, and idempotent mutations.
+No implementation task is currently assigned.
 
-Status: implemented and verified in the working tree; no commit has been created.
+Status: the meal-journal stage is implemented, verified, committed, and synchronized with `origin/main`.
 
 ## Next task
 
-Review this meal-journal stage and commit it only after explicit authorization. Do not begin another application stage automatically.
+Wait for the next explicitly authorized implementation stage.
 
 ## Latest verified commit
 
 ```text
-238221e feat(recipes): add immutable recipe version history and API
+c09e5a6 feat(meals): add time-zone-aware meal journal and daily summaries
 ```
 
-This is the latest committed implementation. The meal-journal working tree described above is also fully verified but remains uncommitted.
+This is the latest committed and verified implementation stage.
