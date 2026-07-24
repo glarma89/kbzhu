@@ -1,12 +1,12 @@
 # Implementation Status
 
-Last updated: 2026-07-23
+Last updated: 2026-07-24
 
 ## Project overview
 
 NutritionTracker is an AI-assisted calorie and macronutrient tracking application. The intended user experience is natural-language food, meal, and recipe tracking, while the backend remains authoritative for validation, persistence, idempotency, and all nutrition arithmetic.
 
-The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, explicit chat confirmation/cancellation continuation, a canonical Russian assistant system instruction, and deterministic bounded per-message context construction. React/TypeScript frontend work and a concrete production identity provider are not implemented.
+The repository currently contains the .NET backend foundation, domain model, deterministic nutrition calculator, EF Core SQLite persistence, food-product, versioned-recipe, and meal-journal Application use cases, authenticated REST endpoints, migrations, automated tests, a provider-independent language-model abstraction and agent loop, an OpenAI Responses API adapter, allowlisted tool dispatch, persisted user-message/tool-execution recovery, trusted claim-based user identity propagation, explicit chat confirmation/cancellation continuation, a canonical Russian assistant system instruction, deterministic bounded per-message context construction, and a minimal React/TypeScript/Vite frontend. A concrete production identity provider is not implemented.
 
 `README.md` does not currently exist.
 
@@ -15,7 +15,7 @@ The repository currently contains the .NET backend foundation, domain model, det
 - Branch: `main`
 - Upstream: `origin/main`
 - Current commit: the context-formation implementation commit containing this checkpoint
-- Current implementation stage: deterministic bounded per-message LLM context construction; committed and verified
+- Current implementation stage: minimal React/TypeScript/Vite frontend; committed and verified
 - Repository guidance and this implementation checkpoint are maintained as tracked documentation.
 
 ## Completed stages
@@ -115,7 +115,16 @@ The repository currently contains the .NET backend foundation, domain model, det
    - Added a parameterized SQLite context source that reads at most 24 recent chat rows rather than loading full chat or nutrition history.
    - Added focused deterministic selection/size unit tests and a migration-backed integration test for persisted history and current user settings.
 
-No frontend or concrete production identity-provider adapter has been completed. Automated tests never invoke OpenAI.
+15. **Minimal React/TypeScript/Vite frontend** - this implementation-stage commit
+   - Added a strict TypeScript Vite project in `src/NutritionTracker.Web` with a separately typed API client and dependency-injected API boundary for tests.
+   - Added Chat, Today, Foods, Recipes, and Goal Settings screens with explicit loading, empty, and error states plus responsive desktop/mobile navigation.
+   - Chat uses stable retry-safe `clientMessageId` values, blocks concurrent duplicate submission, displays executed actions and clarification, and continues explicit confirmation or cancellation.
+   - Today renders only backend-provided nutrition values and snapshots, supports backend weight updates, and requires an inline confirmation before deletion.
+   - Foods supports search, create, and update with per-100-gram values; Recipes shows composition, prepared weight, backend totals, backend-calculated 100-gram portions, and version history.
+   - Goal Settings is intentionally read-only because no nutrition-target mutation endpoint exists; it displays the effective backend target for a selected date rather than simulating persistence.
+   - Added seven Vitest/Testing Library scenarios covering chat idempotency, actions, clarification, confirmation, error handling, diary changes, foods, recipes, and goal display.
+
+No concrete production identity-provider adapter has been completed. Frontend tests use a typed fake API client, and automated tests never invoke OpenAI.
 
 ## Current architecture
 
@@ -134,6 +143,7 @@ Current responsibilities:
 - `NutritionTracker.Application`: food-product, recipe, meal-journal, and chat commands, queries, results, validation, orchestration services, repository abstractions, the current-user and claim contracts, Application exceptions, provider-independent LLM/tool contracts, and the bounded agent loop.
 - `NutritionTracker.Infrastructure`: EF Core SQLite persistence, allowlisted tool dispatch, the OpenAI Responses HTTP adapter, entity configurations, migrations, and DI registration.
 - `NutritionTracker.Api`: composition root, claims-based current-user resolution, authentication/authorization middleware, Controllers, centralized error handling, Swagger/OpenAPI, and health endpoint.
+- `NutritionTracker.Web`: React UI, strict TypeScript transport contracts, a fetch-based API client, responsive presentation, and Vitest/Testing Library tests; it performs no authoritative nutrition arithmetic.
 - `NutritionTracker.Domain.Tests`: domain invariant and nutrition calculation tests.
 - `NutritionTracker.Application.Tests`: dependency-direction and food/recipe use-case tests.
 - `NutritionTracker.IntegrationTests`: health/OpenAPI tests and migration-backed temporary SQLite tests.
@@ -212,6 +222,11 @@ Authoritative calculations belong to `NutritionCalculator`. Controllers, fronten
 - Latest unfinished clarification or confirmation included without loading the complete chat history
 - Current tool results retained through the bounded Responses agent loop; food, recipe, meal, and daily-summary facts continue to come from allowlisted tools
 - Optional summaries are explicitly non-authoritative and lose to current database/tool data on conflict
+- React/TypeScript/Vite frontend with Chat, Today, Foods, Recipes, and Goal Settings views
+- Frontend API access isolated behind a strict `NutritionApi` client contract
+- Retry-safe Chat `clientMessageId` reuse and concurrent-submit protection
+- Backend-only recipe total and 100-gram nutrition display; the frontend does not reproduce nutrition formulas
+- Responsive bottom navigation and compact layouts for mobile screens
 
 ### Future LLM tool contract
 
@@ -319,6 +334,18 @@ Recipe versioning uses:
 
 ## Verification status
 
+Implementation-stage verification on 2026-07-24 for the minimal frontend:
+
+- `npm install`: passed after approved npm network access; 166 packages audited with 0 vulnerabilities
+- `npm run check`: passed with strict TypeScript settings
+- `npm run build`: passed; Vite production bundle generated successfully
+- `npm test`: passed, 7/7 frontend scenarios
+- `dotnet restore NutritionTracker.sln`: passed; all projects were up to date
+- `dotnet build NutritionTracker.sln --no-restore`: passed with 0 warnings and 0 errors
+- `dotnet test NutritionTracker.sln --no-build --no-restore`: passed, 117/117 tests
+- `dotnet format NutritionTracker.sln --verify-no-changes --no-restore`: passed
+- In-app browser bootstrap was attempted for visual QA but the configured browser connector rejected its sandbox metadata; no alternate browser automation was used
+
 Implementation-stage verification on 2026-07-23 for deterministic per-message context formation:
 
 - `dotnet restore NutritionTracker.sln`: passed after approved NuGet network access; the sandboxed attempt was blocked by network policy
@@ -405,23 +432,24 @@ The first sandboxed package restore attempt was blocked by NuGet network restric
 - Measurement units are currently the application's fixed gram-based contract; configurable per-user unit preferences are not implemented.
 - The context contract supports non-authoritative summaries, but no summary generation or persistence workflow is implemented.
 - A concrete production identity provider is not configured; the API currently defines the claims contract and intentionally rejects protected requests through its unconfigured authentication scheme.
-- React/TypeScript/Vite frontend is not present.
+- Frontend protected API calls require the future hosting/identity integration; this stage intentionally adds no login or token handling.
+- Goal Settings is read-only until a backend nutrition-target mutation workflow exists.
 - There is no external or seeded food-product catalog.
 - PostgreSQL support has not been implemented; only portability has been considered in architecture and mappings.
 - No CI workflow is present.
 
 ## Current task
 
-No implementation task is currently active. The deterministic per-message context-formation stage is committed and verified.
+No implementation task is currently active. The minimal frontend stage is committed and verified.
 
 ## Next task
 
-At the next authorized stage, future work may add automated multi-turn prompt-behavior evaluations, persisted non-authoritative conversation summaries, configurable unit preferences, a concrete production identity provider, or nutrition-target mutation workflows.
+At the next authorized stage, future work may add a concrete production identity provider, a nutrition-target mutation workflow, automated multi-turn prompt-behavior evaluations, persisted non-authoritative conversation summaries, or configurable unit preferences.
 
 ## Latest verified commit
 
 ```text
-The implementation commit containing this checkpoint: `feat(chat): add bounded message context`
+The implementation commit containing this checkpoint: `feat(web): add minimal nutrition tracker frontend`
 ```
 
-This commit includes deterministic bounded context construction, database-backed stable settings, unfinished workflow context, relevant recent-message selection, current tool-result continuation, documentation, and the 117-test verified suite.
+This commit contains the minimal frontend, strict typed API client, responsive screens, seven frontend scenarios, and the unchanged 117-test backend suite.
